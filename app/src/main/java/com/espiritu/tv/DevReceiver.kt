@@ -13,6 +13,7 @@ import java.util.Locale
  *   adb shell am broadcast -a com.espiritu.tv.DEMO       sample watch history, to see the banner
  *   adb shell am broadcast -a com.espiritu.tv.CLEAR      forget all watch history
  *   adb shell am broadcast -a com.espiritu.tv.SCAN       look at the media sessions active right now
+ *   adb shell am broadcast -a com.espiritu.tv.NEWS_TEST  show the newest CNAW2 article as a banner over whatever is on screen
  *   adb shell am broadcast -a com.espiritu.tv.DUMP       print the watch history to logcat (tag EspirituTV)
  *   adb shell am broadcast -a com.espiritu.tv.WATCHING --es pkg com.hulu.livingroomplus --es name "The Mentalist"
  *                                                        name what an app that sends no title is playing
@@ -24,6 +25,7 @@ class DevReceiver : BroadcastReceiver() {
             "com.espiritu.tv.DEMO" -> History.seedDemo(ctx)
             "com.espiritu.tv.CLEAR" -> History.clear(ctx)
             "com.espiritu.tv.SCAN" -> Log.i(TAG, "scanned ${MediaWatcher.scan(ctx)} active session(s)")
+            "com.espiritu.tv.NEWS_TEST" -> NewsService.start(ctx, NewsService.ACTION_TEST)
             "com.espiritu.tv.DUMP" -> dump(ctx)
             "com.espiritu.tv.WATCHING" -> {
                 val pkg = intent.getStringExtra("pkg").orEmpty()

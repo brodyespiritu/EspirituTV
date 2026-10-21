@@ -58,6 +58,16 @@ class Prefs(ctx: Context) {
         sp.edit().putString(KEY_WATCHING, lines.joinToString("\n")).apply()
     }
 
+    /** CNAW2 news banners over whatever is on screen. */
+    var newsAlerts: Boolean
+        get() = sp.getBoolean(KEY_NEWS, true)
+        set(v) = sp.edit().putBoolean(KEY_NEWS, v).apply()
+
+    /** The newest CNAW2 article already seen (0 = never looked). */
+    var lastNewsId: Long
+        get() = sp.getLong(KEY_NEWS_ID, 0L)
+        set(v) = sp.edit().putLong(KEY_NEWS_ID, v).apply()
+
     /** Trailers behind Home, when a key is set. */
     var trailers: Boolean
         get() = sp.getBoolean(KEY_TRAILERS, true)
@@ -71,5 +81,7 @@ class Prefs(ctx: Context) {
         const val KEY_TMDB = "tmdb"
         const val KEY_TRAILERS = "trailers"
         const val KEY_WATCHING = "watching"
+        const val KEY_NEWS = "news"
+        const val KEY_NEWS_ID = "newsId"
     }
 }

@@ -271,6 +271,16 @@ class MediaWatcher : NotificationListenerService() {
     }
 
     companion object {
+        /** The live session of [pkg], if the app still has one (apps keep it, paused, after you leave them). */
+        fun session(ctx: Context, pkg: String): MediaController? {
+            val msm = ctx.getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager ?: return null
+            return try {
+                msm.getActiveSessions(ComponentName(ctx, MediaWatcher::class.java)).firstOrNull { it.packageName == pkg }
+            } catch (t: Throwable) {
+                null
+            }
+        }
+
         /**
          * One pass over the sessions active right now. Allowed whenever the listener is enabled, bound or not,
          * which matters on TVs that kill the launcher in the background: Home scans on return and every half minute.

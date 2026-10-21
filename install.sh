@@ -8,7 +8,7 @@
 #   ./install.sh 192.168.1.50 --restore    put the stock TCL/Google launcher back
 set -e
 IP="$1"; MODE="$2"; ARG="$3"
-[ -z "$IP" ] && { echo "Usage: $0 <TV-IP-address> [--make-home|--demo|--history|--watching PKG \"Show\"|--tmdb-key KEY|--restore]"; exit 1; }
+[ -z "$IP" ] && { echo "Usage: $0 <TV-IP-address> [--make-home|--demo|--history|--watching PKG \"Show\"|--tmdb-key KEY|--news-test|--restore]"; exit 1; }
 PKG=com.espiritu.tv
 # Stock home screens: Google TV launcher, its setup helper (re-enables it), classic Android TV launcher.
 STOCK="com.google.android.apps.tv.launcherx com.google.android.tungsten.setupwraith com.google.android.tvlauncher"
@@ -34,6 +34,12 @@ if [ "$MODE" = "--demo" ]; then
   exit 0
 fi
 
+if [ "$MODE" = "--news-test" ]; then
+  TV shell am broadcast -a com.espiritu.tv.NEWS_TEST -n "$PKG/.DevReceiver" >/dev/null
+  echo "The newest CNAW2 article should slide in at the top right for five seconds."
+  exit 0
+fi
+
 if [ "$MODE" = "--history" ]; then
   TV logcat -c 2>/dev/null || true
   TV shell am broadcast -a com.espiritu.tv.SCAN -n "$PKG/.DevReceiver" >/dev/null
@@ -53,14 +59,22 @@ if [ "$MODE" = "--watching" ]; then
 fi
 
 if [ "$MODE" = "--tmdb-key" ]; then
-  [ -n "$ARG" ] || { echo "Give the key: $0 $IP --tmdb-key YOUR_KEY   (or an empty string to clear it)"; exit 1; }
-  TV shell am broadcast -a com.espiritu.tv.TMDB_KEY -n "$PKG/.DevReceiver" --es key "$ARG" >/dev/null
-  echo "TMDB key set. Trailers play behind Home after each still; turn them off in Settings."
+  if [ -n "$ARG" ]; then
+    TV shell am broadcast -a com.espiritu.tv.TMDB_KEY -n "$PKG/.DevReceiver" --es key "$ARG" >/dev/null
+    echo "TMDB key set: trailers for shows beyond the built-in list too. Turn trailers off in Settings."
+  else
+    TV shell am broadcast -a com.espiritu.tv.TMDB_KEY -n "$PKG/.DevReceiver" --esn key >/dev/null
+    echo "TMDB key cleared (built-in trailers still play)."
+  fi
   exit 0
 fi
 
 TV install -r "$DIR/EspirituTV.apk"
 echo "Installed."
+
+# The CNAW2 news banner draws over whatever is on screen, a playing show included.
+TV shell appops set "$PKG" SYSTEM_ALERT_WINDOW allow >/dev/null 2>&1 && echo "News banners may draw over other apps."
+TV shell am start-foreground-service -n "$PKG/.NewsService" >/dev/null 2>&1 || true
 
 # Lets EspirituTV see what's playing (for Continue watching and the weekly banner). Nothing leaves the TV.
 if TV shell cmd notification allow_listener "$PKG/.MediaWatcher" >/dev/null 2>&1; then

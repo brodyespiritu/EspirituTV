@@ -6,6 +6,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- The CNAW2 news banner over other apps, and the small watcher that looks for new articles. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Over-the-air updates (Updater.kt): install the new APK; skip the dialog once this app is the installer of record. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
@@ -74,6 +79,22 @@
             android:name=".UpdateReceiver"
             android:exported="false" />
 
+        <!-- Watches CNAW2 and shows a new article as a banner over any app for five seconds. -->
+        <service
+            android:name=".NewsService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Shows a brief news banner over the screen when CNAW2 publishes an article" />
+        </service>
+
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Developer hooks over adb (only the shell holds DUMP): seed demo history, clear it. -->
         <receiver
             android:name=".DevReceiver"
@@ -82,6 +103,11 @@
             <intent-filter>
                 <action android:name="com.espiritu.tv.DEMO" />
                 <action android:name="com.espiritu.tv.CLEAR" />
+                <action android:name="com.espiritu.tv.SCAN" />
+                <action android:name="com.espiritu.tv.DUMP" />
+                <action android:name="com.espiritu.tv.WATCHING" />
+                <action android:name="com.espiritu.tv.TMDB_KEY" />
+                <action android:name="com.espiritu.tv.NEWS_TEST" />
             </intent-filter>
         </receiver>
     </application>

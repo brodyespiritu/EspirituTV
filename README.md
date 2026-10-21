@@ -21,18 +21,23 @@ To see the screen with sample history (a show left half-way, and one watched the
 
 ## What's on the screen
 
-- **Background** – a popular show from the app focused in the dock (nothing tagged Horror), rotating every 14 s.
-  With a TMDB key set (`./install.sh <ip> --tmdb-key KEY`, free from themoviedb.org/settings/api), each still
-  gives way after 7 s to the show's trailer, muted, with a 600 ms crossfade in and out, then the next still.
-  Trailers come from YouTube's embedded player and are off with no key; toggle them in Settings.
-  To try the effect without an account, `--tmdb-key yt:VIDEOID` plays that one YouTube video for every show.
+- **Background** – a popular show from the app focused in the dock (nothing tagged Horror), in a fresh order on
+  every visit to Home, rotating every 14 s. Every other show's still gives way after 7 s to its trailer, muted,
+  with a 600 ms crossfade in and out, then the next still. The curated shows carry their YouTube trailers with
+  them; a TMDB key (`./install.sh <ip> --tmdb-key KEY`, free from themoviedb.org/settings/api) adds trailers for
+  anything else. Toggle trailers in Settings. `--tmdb-key yt:VIDEOID` plays that one video for every show.
 - **Banner** (top right) – *Continue watching* for a show you left part-way (last 4 days): where you stopped
-  and the minutes left, OK resumes the app. Otherwise the show you watch on the same weekday (3 of the last 6
+  and the minutes left. OK goes back into the show where it stopped (the app's own player for its paused
+  session), not just the app. Otherwise the show you watch on the same weekday (3 of the last 6
   weeks), with *Tonight* on that day. Nothing when there's neither. `./install.sh <ip> --history` prints what
   the TV has recorded. Home reads the TV's media sessions whenever it's in front (TCL kills background apps, so
   a live listener alone misses things). Hulu's TV app reports position but no title: the banner then says
   *On Hulu · 30 min in* until you hold OK on it and type the show's name (or
   `./install.sh <ip> --watching com.hulu.livingroomplus "The Mentalist"`).
+- **CNAW2 news banners** – when cnaw2news.com publishes an article, it slides in as the same banner at the top
+  right over whatever is on screen (a playing show included), stays five seconds and slides away. A small
+  watcher checks the site's public feed once a minute; `install.sh` grants the "draw over other apps"
+  permission it needs. Toggle it in Settings, or try it with `./install.sh <ip> --news-test`.
 - **Dock** – your apps (hold OK for options: move, remove, hide, uninstall), then All apps, Inputs, Settings.
   The focused app grows to 1.5×, gets a white ring and a glow, and the rest dim.
 - **Add to Up Next** – saves the show; saved shows lead that app's rotation.

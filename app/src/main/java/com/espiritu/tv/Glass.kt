@@ -183,6 +183,8 @@ class Glass(
     private val squircle: Boolean = false,
     private val top: Float = 0.17f,
     private val bottom: Float = 0.08f,
+    /** Dark glass with nothing behind it (for a window over another app). */
+    private val plain: Boolean = false,
 ) : Drawable() {
     private val rect = RectF()
     private val shape = RectF()
@@ -213,7 +215,7 @@ class Glass(
     override fun draw(canvas: Canvas) {
         val clip = bottomOnly
         if (clip) { canvas.save(); canvas.clipRect(rect) }
-        val bmp = Backdrop.blurred
+        val bmp = if (plain) null else Backdrop.blurred
         if (bmp != null) {
             if (shaderFor !== bmp) {
                 art.shader = BitmapShader(bmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)

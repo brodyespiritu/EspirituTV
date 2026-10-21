@@ -23,6 +23,8 @@ class HomeController(
 ) : TrailerView.Listener {
     interface Actions {
         fun openPackage(pkg: String)
+        /** Back into the show where it stopped (the app's own player for its paused session), not just the app. */
+        fun resumePlayback(pkg: String)
         fun showInfo(show: Show?, title: String, pkg: String)
         fun toast(msg: String)
     }
@@ -42,6 +44,9 @@ class HomeController(
     private var lastInput = SystemClock.uptimeMillis()
     /** A trailer is being looked up or playing for [currentShow]. */
     private var trailerWanted = false
+    /** New on every Home visit: the rotation's order, and which turns get a trailer (every other one). */
+    private var visitSeed = 0L
+    private var turns = 0
 
     init { view.trailer.listener = this }
 
@@ -78,11 +83,15 @@ class HomeController(
         loadPopular(pkg, 0)
     }
 
+    /** Home is back in front: a fresh order of shows, starting over. */
     fun start() {
+        visitSeed = System.nanoTime()
+        turns = 0
+        popularIndex = 0
+        currentShow = null
         refresh()
         main.removeCallbacks(rotate)
         main.postDelayed(rotate, ROTATE_MS)
-        if (currentShow != null) scheduleTrailer()
     }
 
     fun stop() {
@@ -145,7 +154,7 @@ class HomeController(
                 if (g != gen) return@post
                 continuePkg = play?.pkg
                 when {
-                    play != null -> view.banner.setContinue(play, playShow, playArt, playApp?.label ?: Brands.provider(play.pkg)?.name ?: play.pkg) { actions.openPackage(play.pkg) }
+                    play != null -> view.banner.setContinue(play, playShow, playArt, playApp?.label ?: Brands.provider(play.pkg)?.name ?: play.pkg) { actions.resumePlayback(play.pkg) }
                     weekly != null -> view.banner.setWeekly(weekly, weeklyShow, weeklyArt) { actions.openPackage(weekly.play.pkg) }
                     else -> view.banner.hide()
                 }
@@ -160,7 +169,8 @@ class HomeController(
 
     private fun loadPopular(pkg: String, index: Int) {
         val provider = Brands.provider(pkg) ?: return
-        val ids = (prefs.upNextIds(pkg) + provider.shows).distinct()
+        // Saved Up Next shows lead; the rest come in an order that changes every visit.
+        val ids = (prefs.upNextIds(pkg) + provider.shows.shuffled(java.util.Random(visitSeed xor pkg.hashCode().toLong()))).distinct()
         if (ids.isEmpty()) return
         val g = ++popGen
         main.removeCallbacks(startTrailer)
@@ -202,7 +212,9 @@ class HomeController(
                 view.setDots(ids.size, picked)
                 view.setArt(frame, raw != null)
                 Backdrop.apply(blur)
-                scheduleTrailer()
+                // Every other turn gets the trailer, so the rotation mixes stills and video.
+                turns++
+                if (turns % 2 == 1) scheduleTrailer()
             }
         }
     }

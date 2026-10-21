@@ -30,10 +30,16 @@ class BannerView(ctx: Context) : LinearLayout(ctx) {
     /** Main thread, after the banner is shown or hidden. */
     var onChange: (() -> Unit)? = null
 
+    private val art = FrameLayout(ctx)
+    private val glassIdle = Glass(this, radius = pxf(36), bottomOnly = true)
+    private val glassLit = Glass(this, radius = pxf(36), bottomOnly = true, top = 0.28f, bottom = 0.16f)
+    private val ring = android.graphics.drawable.GradientDrawable().apply { setColor(0); cornerRadius = pxf(16); setStroke(px(3), C.WHITE) }
+
     init {
         orientation = VERTICAL
         setPadding(px(24), px(26), px(24), px(16))
-        background = Glass(this, radius = pxf(36), bottomOnly = true)
+        background = glassIdle
+        noClip()
         visibility = View.GONE
 
         val headRow = LinearLayout(ctx).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -44,8 +50,7 @@ class BannerView(ctx: Context) : LinearLayout(ctx) {
         button.ownFocus()
         button.orientation = HORIZONTAL
         button.gravity = Gravity.CENTER_VERTICAL
-        button.setPadding(px(8), px(8), px(8), px(8))
-        val art = FrameLayout(ctx)
+        button.noClip()
         thumb.scaleType = ImageView.ScaleType.CENTER_CROP
         thumb.background = pill(C.white(0.1f), pxf(16), C.white(0.14f))
         art.addView(thumb, FrameLayout.LayoutParams(px(192), px(108)))
@@ -69,11 +74,14 @@ class BannerView(ctx: Context) : LinearLayout(ctx) {
         progressRow.addView(left)
         text.addView(progressRow, LayoutParams(MATCH, WRAP).apply { topMargin = px(10) })
         button.addView(text, LayoutParams(0, WRAP, 1f).apply { marginStart = px(20) })
-        button.setOnFocusChangeListener { v, f ->
-            v.background = if (f) pill(C.white(0.14f), pxf(22)) else null
-            v.animate().scaleX(if (f) 1.03f else 1f).scaleY(if (f) 1.03f else 1f).setDuration(160).start()
+        // Focus: a white ring on the art and a brighter window. Nothing moves or grows, so nothing gets cut off.
+        button.setOnFocusChangeListener { _, f ->
+            art.foreground = if (f) ring else null
+            background = if (f) glassLit else glassIdle
+            line.setTextColor(if (f) C.white(0.85f) else C.DIM)
+            head.setTextColor(if (f) C.WHITE else C.white(0.78f))
         }
-        addView(button, LayoutParams(MATCH, WRAP).apply { topMargin = px(8); marginStart = -px(8); marginEnd = -px(8) })
+        addView(button, LayoutParams(MATCH, WRAP).apply { topMargin = px(16) })
 
         addView(View(ctx).apply { background = pill(C.white(0.4f), pxf(3)) },
             LayoutParams(px(64), px(6)).apply { topMargin = px(16); gravity = Gravity.CENTER_HORIZONTAL })

@@ -33,6 +33,7 @@ class Dock(ctx: Context, private val host: Host) : FrameLayout(ctx) {
     private val halo = ImageView(ctx).apply { visibility = View.INVISIBLE; setImageBitmap(Halo.glow(px(TILE * 2.6f), px(TILE * FOCUS))) }
     private val ringArt = Halo.ring(px(TILE * FOCUS), pxf(4f))
     private val items = ArrayList<Item>()
+    private var divider: View? = null
     private var apps: List<AppEntry> = emptyList()
     private var running: String? = null
     private var moving: Item? = null
@@ -68,8 +69,8 @@ class Dock(ctx: Context, private val host: Host) : FrameLayout(ctx) {
         row.removeAllViews()
         items.clear()
         for (a in apps) addItem(Item(context, a))
-        row.addView(View(context).apply { setBackgroundColor(C.white(0.22f)) },
-            LinearLayout.LayoutParams(px(2), px(60)).apply { setMargins(px(4), 0, px(4), px(18)) })
+        divider = View(context).apply { setBackgroundColor(C.white(0.22f)) }
+        row.addView(divider, LinearLayout.LayoutParams(px(2), px(60)).apply { setMargins(px(4), 0, px(4), px(18)) })
         addItem(Item(context, null, R.drawable.ic_grid_fill, "All apps") { host.showAllApps() })
         addItem(Item(context, null, R.drawable.ic_tv_fill, "Inputs") { host.showInputs() })
         addItem(Item(context, null, R.drawable.ic_gear_fill, "Settings") { host.showSettings() })
@@ -85,13 +86,18 @@ class Dock(ctx: Context, private val host: Host) : FrameLayout(ctx) {
     }
 
     private fun relayout(focused: Item?) {
-        for (it in items) {
+        val fi = items.indexOf(focused)
+        // The grown tile is 24 px wider on each side than the 16 px gap, so its neighbours slide aside to make room.
+        val spread = if (focused == null) 0f else pxf(SPREAD)
+        items.forEachIndexed { i, it ->
             val on = it === focused
             val scale = if (on) FOCUS else 1f
-            it.view.animate().scaleX(scale).scaleY(scale).translationY(-(scale - 1f) * 46f * D.k)
+            val tx = when { focused == null || on -> 0f; i < fi -> -spread; else -> spread }
+            it.view.animate().scaleX(scale).scaleY(scale).translationX(tx).translationY(-(scale - 1f) * 46f * D.k)
                 .alpha(if (focused == null || on) 1f else 0.7f).setDuration(180).setInterpolator(DecelerateInterpolator()).start()
             it.ring.gone(!on)
         }
+        divider?.animate()?.translationX(when { focused == null -> 0f; fi < apps.size -> spread; else -> -spread })?.setDuration(180)?.start()
         if (focused == null) {
             tip.visibility = View.INVISIBLE
             halo.animate().alpha(0f).setDuration(120).withEndAction { halo.visibility = View.INVISIBLE }.start()
@@ -203,5 +209,7 @@ class Dock(ctx: Context, private val host: Host) : FrameLayout(ctx) {
     private companion object {
         const val TILE = 96
         const val FOCUS = 1.5f
+        /** Half the focused tile's extra width (24) minus the gap (16), plus 8 px of air. */
+        const val SPREAD = 16
     }
 }

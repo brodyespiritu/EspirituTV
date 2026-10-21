@@ -108,6 +108,42 @@ object Brands {
     /** Whose shows fill the screen when no streaming app is installed yet. */
     const val DEFAULT_PROVIDER = "com.wbd.stream"
 
+    // Official trailers on YouTube for the curated shows (TVmaze id → video id), checked to allow embedding.
+    private val trailers = mapOf(
+        53647 to "Qa5kFRxBkNw", // Wednesday
+        42966 to "gpv7ayf_tyE", // Bridgerton
+        77060 to "Xn2PsXD8m4A", // Nobody Wants This
+        75632 to "ufR_08V38sQ", // The Pitt
+        51394 to "TGLq7_MonZ4", // The White Lotus
+        44778 to "Wg86eQkdudI", // House of the Dragon
+        54914 to "pJcfoJCCJ50", // Hacks
+        52341 to "cKOegEuCcfw", // Andor
+        63234 to "7xALolZzhSM", // Daredevil: Born Again
+        48108 to "YbBAb0FxDbU", // Percy Jackson and the Olympians
+        38963 to "aOC8E8z_ifw", // The Mandalorian
+        54198 to "WBlIUsFEnsw", // The Bear
+        37336 to "yAN5uspO_hk", // Shōgun
+        75030 to "tCObCpYScdE", // Paradise
+        15299 to "tcrNsIaQkb4", // The Boys
+        43031 to "GSycMV-_Csw", // Reacher
+        49041 to "0kQ8i2FpRDk", // Fallout
+        33352 to "uYnQDsaxHZU", // The Lord of the Rings: The Rings of Power
+        44933 to "xEQP4VVuyrY", // Severance
+        44458 to "3u7EIiohs6U", // Ted Lasso
+        45039 to "O9ZJChzPn0U", // Slow Horses
+        75605 to "EIQuE7JGXU8", // The Studio
+        53777 to "7zxh49-bsIk", // Landman
+        59344 to "PXd3tO5ITyw", // Tulsa King
+        48090 to "nxuyzk5DUFc", // Star Trek: Strange New Worlds
+        78665 to "84o1Q6fB20k", // Dexter: Resurrection
+        54128 to "4x2NzusLAqk", // Poker Face
+        42289 to "fpIehnHmjRY", // Love Island
+        64977 to "qXJ2HKqFbE0", // The Day of the Jackal
+        59698 to "6sosTNRw_uQ", // Spy×Family
+    )
+
+    fun trailer(tvmazeId: Int): String? = trailers[tvmazeId]
+
     fun of(pkg: String): Brand? = brands[pkg]
     fun provider(pkg: String): Provider? = providers[pkg]
 }

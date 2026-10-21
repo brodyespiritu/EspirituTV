@@ -2,6 +2,7 @@ package com.espiritu.tv
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.PendingIntent
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -83,6 +84,8 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
 
         Updater.onChange = { home.updateAvailable = Updater.available != null }
         Updater.cleanUp(this)
+
+        if (prefs.newsAlerts) NewsService.start(this)
 
         // The media watcher runs in this process, so history changes reach Home directly.
         History.onChange = {
@@ -254,6 +257,19 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
         if (!openPackageOrNull(app.pkg)) toast("Couldn't open ${app.label}")
     }
 
+    /**
+     * Back into the show where it stopped. Apps keep their media session, paused, after you leave; its
+     * "now playing" screen reopens the player on that episode, and play() continues from the same second.
+     * Without a session (the app was fully closed) the app opens normally.
+     */
+    override fun resumePlayback(pkg: String) {
+        val session = MediaWatcher.session(this, pkg)
+        if (session == null) { openPackage(pkg); return }
+        val opened = session.sessionActivity?.let { try { it.send(); true } catch (e: PendingIntent.CanceledException) { false } } ?: false
+        if (!opened) openPackage(pkg)
+        main.postDelayed({ try { session.transportControls.play() } catch (t: Throwable) {} }, 900)
+    }
+
     /** Opens the app, or its Play Store page when it isn't installed (the hero's "Get …" button). */
     override fun openPackage(pkg: String) {
         apps.firstOrNull { it.pkg == pkg }?.let { openApp(it); return }
@@ -331,15 +347,22 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
             section("You")
             option(R.drawable.ic_visibility, "Name: ${prefs.profile}") { askName() }
             section("Home")
-            val trailerRow = when {
-                prefs.tmdbKey.isBlank() -> "Trailers: needs a TMDB key"
-                prefs.trailers -> "Trailers behind Home: on"
-                else -> "Trailers behind Home: off"
+            option(R.drawable.ic_play, if (prefs.trailers) "Trailers behind Home: on" else "Trailers behind Home: off") {
+                prefs.trailers = !prefs.trailers
+                controller.trailersChanged()
+                toast(if (prefs.trailers) "Trailers on" else "Trailers off")
             }
-            option(R.drawable.ic_play, trailerRow) {
-                if (prefs.tmdbKey.isBlank()) toast("Free key at themoviedb.org → then ./install.sh <TV-IP> --tmdb-key KEY")
-                else { prefs.trailers = !prefs.trailers; controller.trailersChanged(); toast(if (prefs.trailers) "Trailers on" else "Trailers off") }
+            val overlayOk = Settings.canDrawOverlays(this@MainActivity)
+            option(R.drawable.ic_info, when {
+                !prefs.newsAlerts -> "CNAW2 news banners: off"
+                !overlayOk -> "CNAW2 news banners: need 'draw over apps' (install.sh)"
+                else -> "CNAW2 news banners: on"
+            }) {
+                prefs.newsAlerts = !prefs.newsAlerts
+                if (prefs.newsAlerts) NewsService.start(this@MainActivity) else NewsService.stop(this@MainActivity)
+                toast(if (prefs.newsAlerts) "News banners on" else "News banners off")
             }
+            if (prefs.newsAlerts && overlayOk) option(R.drawable.ic_play, "Show a test news banner") { NewsService.start(this@MainActivity, NewsService.ACTION_TEST) }
             option(R.drawable.ic_hide, "Hidden apps ($hiddenCount)") { showHidden() }
             option(R.drawable.ic_star, "Clear Up Next ($upNext)") { prefs.upNext = emptyList(); controller.refresh(); toast("Up Next cleared") }
             option(R.drawable.ic_delete, "Forget watch history") { History.clear(this@MainActivity); toast("Watch history cleared") }

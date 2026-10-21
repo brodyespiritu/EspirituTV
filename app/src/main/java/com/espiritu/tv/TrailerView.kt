@@ -106,9 +106,9 @@ class TrailerView(ctx: Context) : FrameLayout(ctx) {
         }
     }
 
-    /** The player is at least 12% larger than the screen (YouTube's own bar falls off the edge), more for wide pictures. */
+    /** The player is at least 20% larger than the screen (YouTube's own bar and captions fall off the edges), more for wide pictures. */
     private fun html(id: String, cover: Float): String {
-        val s = maxOf(1.12f, cover)
+        val s = maxOf(1.2f, cover)
         val size = "%.1f".format(java.util.Locale.US, s * 100)
         val off = "%.2f".format(java.util.Locale.US, (s - 1f) / 2f * 100)
         return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
