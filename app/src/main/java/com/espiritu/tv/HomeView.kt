@@ -17,6 +17,9 @@ import android.widget.LinearLayout
 class HomeView(ctx: Context, dockHost: Dock.Host) : FrameLayout(ctx) {
     private val artBack = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
     private val artFront = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+    /** A muted trailer over the still, with the same scrims laid over it so the text stays readable. */
+    val trailer = TrailerView(ctx)
+    private val trailerScrim = ImageView(ctx).apply { visibility = View.GONE }
     private var shown: Bitmap? = null
     val avatar = Avatar(ctx, 60)
     /** A 40 px glass pill like the hero's "Top 10 today" chip, scaled from its right edge so focus never covers the avatar. */
@@ -34,6 +37,8 @@ class HomeView(ctx: Context, dockHost: Dock.Host) : FrameLayout(ctx) {
         background = sceneBackground()
         addView(artBack, LayoutParams(MATCH, MATCH))
         addView(artFront, LayoutParams(MATCH, MATCH))
+        addView(trailer, LayoutParams(MATCH, MATCH))
+        addView(trailerScrim, LayoutParams(MATCH, MATCH))
 
         val wordmark = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
         wordmark.addView(ctx.label(38, Fonts.semibold, text = "Espiritu").apply { letterSpacing = -0.02f })
@@ -70,6 +75,20 @@ class HomeView(ctx: Context, dockHost: Dock.Host) : FrameLayout(ctx) {
         artFront.alpha = 0f
         artFront.animate().alpha(1f).setDuration(420).withEndAction { artBack.setImageDrawable(null) }.start()
     }
+
+    /** A trailer is (about to be) on screen: scrims over it, and the credit names YouTube. */
+    fun trailerShown(on: Boolean) {
+        if (on && trailerScrim.drawable == null) trailerScrim.setImageBitmap(Backdrop.scrimsOnly())
+        trailerScrim.gone(!on)
+        credit.text = if (on) "Trailer: YouTube" else "Art: TVmaze"
+        if (!on) artFront.visibility = View.VISIBLE
+    }
+
+    /** The trailer has fully faded in: stop drawing the still underneath it. */
+    fun trailerCovered() { if (trailer.playing) artFront.visibility = View.INVISIBLE }
+
+    /** Bring the still back under a trailer that's about to fade out. */
+    fun artVisible() { artFront.visibility = View.VISIBLE }
 
     /** Whether a newer version waits; the chip shows while the banner isn't using that corner (Settings keeps its row). */
     var updateAvailable = false

@@ -76,6 +76,10 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
         home.avatar.setOnClickListener { showSettings() }
         home.update.setOnClickListener { Updater.available?.let { showUpdate(it) } }
         controller = HomeController(this, home, prefs, io, main, this)
+        home.banner.button.setOnLongClickListener { controller.continuePkg?.let { askWatching(it) } != null }
+        home.banner.button.setOnKeyListener { _, key, ev ->
+            if (ev.action == KeyEvent.ACTION_DOWN && key == KeyEvent.KEYCODE_MENU) { controller.continuePkg?.let { askWatching(it) }; true } else false
+        }
 
         Updater.onChange = { home.updateAvailable = Updater.available != null }
         Updater.cleanUp(this)
@@ -107,9 +111,19 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(r, f, Context.RECEIVER_EXPORTED) else registerReceiver(r, f)
     }
 
+    /** The TV kills the launcher while apps play, so Home reads the media sessions itself whenever it's in front. */
+    private val scanRunnable = object : Runnable {
+        override fun run() {
+            io.execute { MediaWatcher.scan(this@MainActivity) }
+            main.postDelayed(this, 30_000)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         loadInputs()
+        main.removeCallbacks(scanRunnable)
+        scanRunnable.run()
         controller.start()
         Updater.checkDaily(this)
         // Back from the "Install unknown apps" switch with a verified APK waiting: carry on.
@@ -117,8 +131,32 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
     }
 
     override fun onPause() {
+        main.removeCallbacks(scanRunnable)
         controller.stop()
         super.onPause()
+    }
+
+    /** Hold OK on the Continue-watching banner: name what an app that sends no title is playing. */
+    private fun askWatching(pkg: String) {
+        val label = apps.firstOrNull { it.pkg == pkg }?.label ?: Brands.provider(pkg)?.name ?: "this app"
+        val input = EditText(this).apply {
+            setText(prefs.watching(pkg).orEmpty())
+            hint = "Show name"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+            setSingleLine()
+        }
+        AlertDialog.Builder(this)
+            .setTitle("What are you watching on $label?")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val name = input.text.toString().trim()
+                val old = prefs.watching(pkg)
+                prefs.setWatching(pkg, name)
+                if (name.isNotEmpty()) History.relabel(this, pkg, name, old)
+                controller.refresh()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     override fun onDestroy() {
@@ -293,6 +331,15 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
             section("You")
             option(R.drawable.ic_visibility, "Name: ${prefs.profile}") { askName() }
             section("Home")
+            val trailerRow = when {
+                prefs.tmdbKey.isBlank() -> "Trailers: needs a TMDB key"
+                prefs.trailers -> "Trailers behind Home: on"
+                else -> "Trailers behind Home: off"
+            }
+            option(R.drawable.ic_play, trailerRow) {
+                if (prefs.tmdbKey.isBlank()) toast("Free key at themoviedb.org → then ./install.sh <TV-IP> --tmdb-key KEY")
+                else { prefs.trailers = !prefs.trailers; controller.trailersChanged(); toast(if (prefs.trailers) "Trailers on" else "Trailers off") }
+            }
             option(R.drawable.ic_hide, "Hidden apps ($hiddenCount)") { showHidden() }
             option(R.drawable.ic_star, "Clear Up Next ($upNext)") { prefs.upNext = emptyList(); controller.refresh(); toast("Up Next cleared") }
             option(R.drawable.ic_delete, "Forget watch history") { History.clear(this@MainActivity); toast("Watch history cleared") }

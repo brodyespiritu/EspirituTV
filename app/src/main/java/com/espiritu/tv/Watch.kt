@@ -19,8 +19,8 @@ import java.util.Calendar
 /** One stretch of watching a title in an app. [guesses] are show-name candidates from the media metadata, best first. */
 class Play(
     val pkg: String,
-    val title: String,
-    val guesses: List<String>,
+    var title: String,
+    var guesses: List<String>,
     var first: Long,
     var last: Long,
     var position: Long,
@@ -53,17 +53,24 @@ object History {
         file = File(ctx.filesDir, "history.json").also { load(it) }
     }
 
-    fun record(ctx: Context, pkg: String, md: MediaMetadata?, st: PlaybackState?) {
+    /**
+     * Notes what a media session is doing. Some TV apps (Hulu's) publish no metadata at all, only playback
+     * state; [label] is then the name the user gave that app's playback, and the entry is kept without a title.
+     */
+    fun record(ctx: Context, pkg: String, md: MediaMetadata?, st: PlaybackState?, label: String? = null) {
         init(ctx)
-        md ?: return
-        val title = (md.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE) ?: md.getString(MediaMetadata.METADATA_KEY_TITLE))
-            ?.trim()?.ifEmpty { null } ?: return
-        val guesses = listOf(
-            MediaMetadata.METADATA_KEY_ALBUM, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
-            MediaMetadata.METADATA_KEY_ARTIST, MediaMetadata.METADATA_KEY_ALBUM_ARTIST,
-        ).mapNotNull { md.getString(it)?.trim()?.ifEmpty { null } }.plus(title).distinct()
-        val duration = md.getLong(MediaMetadata.METADATA_KEY_DURATION)
-        val playing = st?.state == PlaybackState.STATE_PLAYING
+        val mdTitle = md?.let { (it.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE) ?: it.getString(MediaMetadata.METADATA_KEY_TITLE)) }
+            ?.trim()?.ifEmpty { null }
+        val named = label?.trim()?.ifEmpty { null }
+        val title = mdTitle ?: named ?: ""
+        val guesses = (listOfNotNull(named) + md?.let { m ->
+            listOf(MediaMetadata.METADATA_KEY_ALBUM, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
+                MediaMetadata.METADATA_KEY_ARTIST, MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
+                .mapNotNull { m.getString(it)?.trim()?.ifEmpty { null } }
+        }.orEmpty() + listOfNotNull(mdTitle)).distinct()
+        val duration = md?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+        val state = st?.state ?: PlaybackState.STATE_NONE
+        val playing = state == PlaybackState.STATE_PLAYING
         var pos = st?.position ?: -1L
         if (playing && st != null && st.lastPositionUpdateTime > 0) {
             pos += ((SystemClock.elapsedRealtime() - st.lastPositionUpdateTime) * st.playbackSpeed).toLong()
@@ -71,8 +78,12 @@ object History {
         val now = System.currentTimeMillis()
         synchronized(this) {
             val recent = plays.lastOrNull { it.pkg == pkg && it.title == title }?.takeIf { now - it.last < 6 * HOUR }
-            // Only start a new entry once something actually plays.
-            val p = recent ?: if (playing) Play(pkg, title, guesses, now, now, 0, 0).also { plays += it } else return
+            // A new entry needs playback, or real progress: a session parked part-way is what Continue watching is for.
+            // (The launcher is usually scanning after the fact, once Home is back in front.)
+            val p = recent ?: if (playing || (pos >= 60_000 && state != PlaybackState.STATE_STOPPED && state != PlaybackState.STATE_ERROR))
+                Play(pkg, title, guesses, now, now, 0, 0).also { plays += it } else return
+            if (named != null && p.guesses.firstOrNull() != named) p.guesses = (listOf(named) + p.guesses).distinct()
+            if (p.title.isBlank() && named != null) p.title = named
             p.last = now
             if (pos >= 0) p.position = pos
             if (duration > 0) p.duration = duration
@@ -82,11 +93,26 @@ object History {
         }
     }
 
-    /** The newest title left part-way through in the last four days. */
+    /** The user named what an app without metadata is playing: apply it to that app's untitled entries (and ones under [old]). */
+    fun relabel(ctx: Context, pkg: String, name: String, old: String? = null) {
+        init(ctx)
+        val n = name.trim()
+        if (n.isEmpty()) return
+        synchronized(this) {
+            for (p in plays) {
+                if (p.pkg == pkg && (p.title.isBlank() || p.guesses.isEmpty() || (old != null && p.title == old))) { p.title = n; p.guesses = listOf(n) }
+            }
+            version++
+            save(force = true)
+        }
+    }
+
+    /** The newest title left part-way through in the last four days (with no duration known: at least five minutes in). */
     fun inProgress(now: Long = System.currentTimeMillis()): Play? = synchronized(this) {
         plays.asReversed().firstOrNull {
-            now - it.last < 4 * DAY && it.duration >= 10 * 60_000 &&
-                it.position >= it.duration * 0.03 && it.position <= it.duration * 0.93
+            now - it.last < 4 * DAY && (
+                (it.duration >= 10 * 60_000 && it.position >= it.duration * 0.03 && it.position <= it.duration * 0.93) ||
+                    (it.duration <= 0 && it.position >= 5 * 60_000))
         }
     }
 
@@ -102,6 +128,7 @@ object History {
         val groups = plays
             .filter { now - it.first < 42 * DAY && (it.last - it.first >= 10 * 60_000 || it.position >= 10 * 60_000) }
             .filter { it.duration <= 0 || it.duration >= 15 * 60_000 }
+            .filter { it.showGuess.isNotBlank() }
             .groupBy { key(it.showGuess) }
         var best: Weekly? = null
         for (group in groups.values) {
@@ -126,6 +153,9 @@ object History {
     }
 
     fun key(s: String) = s.lowercase().replace(Regex("[^a-z0-9]"), "")
+
+    /** Everything recorded, oldest first (for the adb DUMP hook). */
+    fun all(): List<Play> = synchronized(this) { plays.toList() }
 
     fun clear(ctx: Context) {
         init(ctx)
@@ -237,6 +267,28 @@ class MediaWatcher : NotificationListenerService() {
     }
 
     private fun note(c: MediaController) {
-        try { History.record(this, c.packageName, c.metadata, c.playbackState) } catch (t: Throwable) {}
+        try { History.record(this, c.packageName, c.metadata, c.playbackState, Prefs(this).watching(c.packageName)) } catch (t: Throwable) {}
+    }
+
+    companion object {
+        /**
+         * One pass over the sessions active right now. Allowed whenever the listener is enabled, bound or not,
+         * which matters on TVs that kill the launcher in the background: Home scans on return and every half minute.
+         */
+        fun scan(ctx: Context): Int {
+            val msm = ctx.getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager ?: return 0
+            val prefs = Prefs(ctx)
+            return try {
+                var n = 0
+                for (c in msm.getActiveSessions(ComponentName(ctx, MediaWatcher::class.java))) {
+                    if (c.packageName == ctx.packageName) continue
+                    History.record(ctx, c.packageName, c.metadata, c.playbackState, prefs.watching(c.packageName))
+                    n++
+                }
+                n
+            } catch (t: Throwable) {
+                0
+            }
+        }
     }
 }

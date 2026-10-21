@@ -1,11 +1,9 @@
 package com.espiritu.tv
 
 import android.content.Context
-import android.graphics.Outline
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
-import android.view.ViewOutlineProvider
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -13,9 +11,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * The macOS-style dock from the canvas: a frosted pill holding 96 px squircle app tiles, a divider,
- * then glass tiles for All apps, Inputs and Settings. The focused tile grows to 1.4× (its neighbours 1.16×)
- * from its bottom edge, lifts with a shadow and shows its name in a chip above.
+ * The dock from the canvas: a frosted pill holding 96 px squircle app tiles, a divider, then glass tiles for
+ * All apps, Inputs and Settings. The focused tile is unmistakable: it grows to 1.5× from its bottom edge,
+ * gets a white ring and a glowing halo, and its name floats above it, while the other tiles dim a little.
  */
 class Dock(ctx: Context, private val host: Host) : FrameLayout(ctx) {
 
@@ -32,6 +30,8 @@ class Dock(ctx: Context, private val host: Host) : FrameLayout(ctx) {
 
     private val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
     private val tip: TextView = ctx.glassChip("", 48, 21, 22).apply { visibility = View.INVISIBLE }
+    private val halo = ImageView(ctx).apply { visibility = View.INVISIBLE; setImageBitmap(Halo.glow(px(TILE * 2.6f), px(TILE * FOCUS))) }
+    private val ringArt = Halo.ring(px(TILE * FOCUS), pxf(4f))
     private val items = ArrayList<Item>()
     private var apps: List<AppEntry> = emptyList()
     private var running: String? = null
@@ -44,7 +44,8 @@ class Dock(ctx: Context, private val host: Host) : FrameLayout(ctx) {
         noClip()
         row.noClip()
         row.setPadding(px(18), px(14), px(18), px(14))
-        row.background = Glass(row, Glass.all(pxf(38)))
+        row.background = Glass(row, radius = pxf(38))
+        addView(halo, LayoutParams(px(TILE * 2.6f), px(TILE * 2.6f)))
         addView(row, LayoutParams(WRAP, WRAP, Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM))
         addView(tip, LayoutParams(WRAP, px(48)))
     }
@@ -77,32 +78,39 @@ class Dock(ctx: Context, private val host: Host) : FrameLayout(ctx) {
     }
 
     private fun addItem(item: Item) {
-        val lp = LinearLayout.LayoutParams(px(96), px(96))
+        val lp = LinearLayout.LayoutParams(px(TILE), px(TILE))
         if (items.isNotEmpty()) lp.marginStart = px(16)
         row.addView(item.view, lp)
         items += item
     }
 
     private fun relayout(focused: Item?) {
-        val fi = items.indexOf(focused)
-        items.forEachIndexed { i, it ->
-            val scale = when {
-                fi < 0 -> 1f
-                i == fi -> 1.4f
-                kotlin.math.abs(i - fi) == 1 -> 1.16f
-                else -> 1f
-            }
+        for (it in items) {
+            val on = it === focused
+            val scale = if (on) FOCUS else 1f
             it.view.animate().scaleX(scale).scaleY(scale).translationY(-(scale - 1f) * 46f * D.k)
-                .translationZ(if (i == fi) pxf(24) else 0f).setDuration(180).setInterpolator(DecelerateInterpolator()).start()
+                .alpha(if (focused == null || on) 1f else 0.7f).setDuration(180).setInterpolator(DecelerateInterpolator()).start()
+            it.ring.gone(!on)
         }
-        if (focused == null) { tip.visibility = View.INVISIBLE; return }
+        if (focused == null) {
+            tip.visibility = View.INVISIBLE
+            halo.animate().alpha(0f).setDuration(120).withEndAction { halo.visibility = View.INVISIBLE }.start()
+            return
+        }
         tip.text = if (moving != null) "◀ ▶ to move · OK when done" else focused.name
         tip.visibility = View.VISIBLE
         tip.post {
             val v = focused.view
-            val lift = (0.4f * 46f * D.k) + v.height * 0.4f
-            tip.x = row.left + v.left + v.width / 2f - tip.width / 2f
+            val lift = ((FOCUS - 1f) * 46f * D.k) + v.height * (FOCUS - 1f)
+            val cx = row.left + v.left + v.width / 2f
+            tip.x = cx - tip.width / 2f
             tip.y = row.top + v.top - lift - px(22) - tip.height
+            // The halo sits behind the grown tile: same centre, same lift.
+            val grownCy = row.top + v.top + v.height - (FOCUS - 1f) * 46f * D.k - v.height * FOCUS / 2f
+            halo.x = cx - halo.width / 2f
+            halo.y = grownCy - halo.height / 2f
+            halo.visibility = View.VISIBLE
+            halo.animate().alpha(1f).setDuration(180).start()
         }
     }
 
@@ -141,6 +149,7 @@ class Dock(ctx: Context, private val host: Host) : FrameLayout(ctx) {
     private inner class Item(ctx: Context, val app: AppEntry?, iconRes: Int = 0, val name: String = app?.label ?: "", val action: (() -> Unit)? = null) {
         val view = FrameLayout(ctx)
         val dot = View(ctx)
+        val ring = ImageView(ctx)
 
         init {
             view.ownFocus()
@@ -156,12 +165,13 @@ class Dock(ctx: Context, private val host: Host) : FrameLayout(ctx) {
                 view.background = Glass(view, squircle = true, top = 0.24f, bottom = 0.16f)
             }
             view.addView(img, LayoutParams(MATCH, MATCH))
+            ring.setImageBitmap(ringArt)
+            ring.scaleType = ImageView.ScaleType.FIT_XY
+            ring.visibility = View.GONE
+            view.addView(ring, LayoutParams(MATCH, MATCH))
             dot.background = pill(C.white(0.9f), pxf(3))
             dot.visibility = View.GONE
             view.addView(dot, LayoutParams(px(6), px(6), Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM).apply { bottomMargin = -px(10) })
-            view.outlineProvider = object : ViewOutlineProvider() {
-                override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height, v.width * 0.28f); o.alpha = 0.7f }
-            }
             view.setOnFocusChangeListener { _, f ->
                 if (f) { lastFocused = view; host.dockFocused(app); relayout(this) }
                 // The row still reports this child as focused while it's losing focus, so check after the move.
@@ -184,14 +194,14 @@ class Dock(ctx: Context, private val host: Host) : FrameLayout(ctx) {
         }
     }
 
-    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
-        super.onSizeChanged(w, h, ow, oh)
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        super.onLayout(changed, l, t, r, b)
         // Each tile grows from its bottom centre.
         items.forEach { it.view.pivotX = it.view.width / 2f; it.view.pivotY = it.view.height.toFloat() }
     }
 
-    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        super.onLayout(changed, l, t, r, b)
-        items.forEach { it.view.pivotX = it.view.width / 2f; it.view.pivotY = it.view.height.toFloat() }
+    private companion object {
+        const val TILE = 96
+        const val FOCUS = 1.5f
     }
 }

@@ -7,32 +7,37 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.TextView
 import java.text.DateFormatSymbols
-import java.util.Calendar
 
 /**
- * The canvas banner hanging from the top edge: "You watch every Tuesday", the show's art with a Tonight badge,
- * its name and when it's on. Only shown when the TV has seen a show watched on the same weekday for weeks.
+ * The banner hanging from the top edge, in one of two modes:
+ * - Continue watching: the show left part-way, its episode, a progress bar and the minutes left;
+ * - Weekly: "You watch every Tuesday", the show's art with a Tonight badge, and when it's on.
+ * A show in progress wins; with neither, the banner isn't there.
  */
 class BannerView(ctx: Context) : LinearLayout(ctx) {
+    private val headIcon = ImageView(ctx)
     private val head = ctx.label(19, Fonts.medium, C.white(0.78f))
     val button = LinearLayout(ctx)
     private val thumb = ImageView(ctx)
     private val badge = ctx.label(15, Fonts.bold, C.BUTTON_INK, "Tonight")
     private val name = ctx.label(25, Fonts.semibold)
-    private val time = ctx.label(18, Fonts.regular, C.DIM)
+    private val line = ctx.label(18, Fonts.regular, C.DIM)
+    private val progressRow = LinearLayout(ctx).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+    private val track = FrameLayout(ctx)
+    private val fill = View(ctx)
+    private val left = ctx.label(16, Fonts.medium, C.white(0.85f))
     /** Main thread, after the banner is shown or hidden. */
     var onChange: (() -> Unit)? = null
 
     init {
         orientation = VERTICAL
         setPadding(px(24), px(26), px(24), px(16))
-        background = Glass(this, Glass.bottomOnly(pxf(36)))
+        background = Glass(this, radius = pxf(36), bottomOnly = true)
         visibility = View.GONE
 
         val headRow = LinearLayout(ctx).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        headRow.addView(ImageView(ctx).apply { setImageResource(R.drawable.ic_calendar) }, LayoutParams(px(22), px(22)).apply { marginEnd = px(10) })
+        headRow.addView(headIcon, LayoutParams(px(22), px(22)).apply { marginEnd = px(10) })
         headRow.addView(head)
         addView(headRow)
 
@@ -54,7 +59,15 @@ class BannerView(ctx: Context) : LinearLayout(ctx) {
         name.setLineSpacing(0f, 1.15f)
         name.maxLines = 2
         text.addView(name)
-        text.addView(time, LayoutParams(WRAP, WRAP).apply { topMargin = px(8) })
+        line.maxLines = 1
+        line.ellipsize = android.text.TextUtils.TruncateAt.END
+        text.addView(line, LayoutParams(MATCH, WRAP).apply { topMargin = px(6) })
+        track.background = pill(C.white(0.28f), pxf(2))
+        fill.background = pill(C.WHITE, pxf(2))
+        track.addView(fill, FrameLayout.LayoutParams(0, MATCH))
+        progressRow.addView(track, LayoutParams(0, px(4), 1f).apply { marginEnd = px(12) })
+        progressRow.addView(left)
+        text.addView(progressRow, LayoutParams(MATCH, WRAP).apply { topMargin = px(10) })
         button.addView(text, LayoutParams(0, WRAP, 1f).apply { marginStart = px(20) })
         button.setOnFocusChangeListener { v, f ->
             v.background = if (f) pill(C.white(0.14f), pxf(22)) else null
@@ -66,15 +79,52 @@ class BannerView(ctx: Context) : LinearLayout(ctx) {
             LayoutParams(px(64), px(6)).apply { topMargin = px(16); gravity = Gravity.CENTER_HORIZONTAL })
     }
 
-    fun set(weekly: Weekly, show: Show?, art: Bitmap?, onClick: () -> Unit) {
+    /**
+     * The show left part-way: where it stopped, and how much is left. An app that sends no title shows as
+     * "On Hulu" with how far in it is, until the user names it (hold OK on the banner).
+     */
+    fun setContinue(play: Play, show: Show?, art: Bitmap?, appLabel: String, onClick: () -> Unit) {
+        headIcon.setImageResource(R.drawable.ic_play_fill)
+        head.text = "Continue watching"
+        val known = show?.name ?: play.showGuess
+        name.text = known.ifBlank { "On $appLabel" }
+        val ep = when {
+            show != null && play.title.isNotBlank() && !show.name.equals(play.title, ignoreCase = true) -> play.title
+            known.isNotBlank() -> appLabel
+            else -> "Hold OK to name it"
+        }
+        line.text = ep
+        line.gone(false)
+        badge.gone(true)
+        val frac = if (play.duration > 0) (play.position.toFloat() / play.duration).coerceIn(0f, 1f) else 0f
+        left.text = when {
+            play.duration > 0 -> "${((play.duration - play.position) / 60_000).coerceAtLeast(1)} min left"
+            play.position > 0 -> "${play.position / 60_000} min in"
+            else -> ""
+        }
+        track.gone(play.duration <= 0)
+        progressRow.gone(left.text.isEmpty())
+        progressRow.post { fill.layoutParams = (fill.layoutParams as FrameLayout.LayoutParams).apply { width = (track.width * frac).toInt() } }
+        show(art, onClick)
+    }
+
+    /** The show watched on the same weekday for weeks. */
+    fun setWeekly(weekly: Weekly, show: Show?, art: Bitmap?, onClick: () -> Unit) {
         val day = DateFormatSymbols().weekdays[weekly.weekday]
+        headIcon.setImageResource(R.drawable.ic_calendar)
         head.text = "You watch every $day"
         name.text = show?.name ?: weekly.play.showGuess
         val tonight = weekly.daysUntil == 0
         badge.gone(!tonight)
         val at = show?.time?.let(::clock) ?: clock(weekly.minuteOfDay)
         val where = show?.network ?: ""
-        time.text = listOf(if (tonight) "Tonight" else day, at, where).filter { it.isNotBlank() }.joinToString(" · ")
+        line.text = listOf(if (tonight) "Tonight" else day, at, where).filter { it.isNotBlank() }.joinToString(" · ")
+        line.gone(false)
+        progressRow.gone(true)
+        show(art, onClick)
+    }
+
+    private fun show(art: Bitmap?, onClick: () -> Unit) {
         thumb.setImageBitmap(art?.let { AppLoaderArt.roundedCrop(it, px(192), px(108), pxf(16)) })
         button.setOnClickListener { onClick() }
         visibility = View.VISIBLE
@@ -99,9 +149,5 @@ class BannerView(ctx: Context) : LinearLayout(ctx) {
         val h12 = if (h % 12 == 0) 12 else h % 12
         val ampm = if (h < 12) "AM" else "PM"
         return if (m == 0) "$h12 $ampm" else "$h12:${"%02d".format(m)} $ampm"
-    }
-
-    companion object {
-        fun isToday(weekday: Int) = Calendar.getInstance().get(Calendar.DAY_OF_WEEK) == weekday
     }
 }

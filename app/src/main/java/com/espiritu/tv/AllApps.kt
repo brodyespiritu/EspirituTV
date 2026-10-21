@@ -83,7 +83,6 @@ class AllApps(private val activity: Activity, private val apps: List<AppEntry>, 
             cell.addView(column, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER_HORIZONTAL or Gravity.TOP).apply { topMargin = px(20) })
             column.setOnFocusChangeListener { v, f ->
                 v.animate().scaleX(if (f) 1.1f else 1f).scaleY(if (f) 1.1f else 1f).setDuration(160).start()
-                card.translationZ = if (f) pxf(20) else 0f
                 name.setTextColor(if (f) C.WHITE else C.DIM)
             }
             return Holder(cell, card, name)

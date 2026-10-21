@@ -2,6 +2,7 @@ package com.espiritu.tv
 
 import android.graphics.Bitmap
 import android.graphics.BitmapShader
+import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.ColorFilter
 import android.graphics.ColorMatrix
@@ -57,6 +58,7 @@ object Backdrop {
     var blurred: Bitmap? = null; private set
     private val surfaces = ArrayList<WeakReference<View>>()
     private var empty: Bitmap? = null
+    private var scrims: Bitmap? = null
 
     fun register(v: View) { surfaces += WeakReference(v) }
 
@@ -69,6 +71,10 @@ object Backdrop {
 
     /** The scene with no art, composed once and kept. */
     fun emptyArt(): Bitmap = empty ?: compose(null).also { empty = it }
+
+    /** Just the three scrims on a clear background, for laying over a playing trailer. Composed once. */
+    fun scrimsOnly(): Bitmap = scrims ?: Bitmap.createBitmap(D.screenW, D.screenH, Bitmap.Config.ARGB_8888)
+        .also { drawScrims(Canvas(it)); scrims = it }
 
     /**
      * A screen-sized frame: [art] center-cropped (or the scene gradient), then the canvas scrims:
@@ -91,15 +97,22 @@ object Backdrop {
             val dh = art.height * scale
             c.drawBitmap(art, null, RectF((w - dw) / 2, (h - dh) / 2, (w + dw) / 2, (h + dh) / 2), p)
         }
-        p.shader = LinearGradient(0f, h.toFloat(), 0f, 0f,
-            intArrayOf(C.shade(0.92f), C.shade(0.6f), C.shade(0f)), floatArrayOf(0f, 0.24f, 0.54f), Shader.TileMode.CLAMP)
-        c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), p)
-        p.shader = LinearGradient(0f, 0f, w.toFloat(), 0f,
-            intArrayOf(C.shade(0.72f), C.shade(0.32f), C.shade(0f)), floatArrayOf(0f, 0.36f, 0.6f), Shader.TileMode.CLAMP)
-        c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), p)
-        p.shader = LinearGradient(0f, 0f, 0f, pxf(240), C.shade(0.55f), C.shade(0f), Shader.TileMode.CLAMP)
-        c.drawRect(0f, 0f, w.toFloat(), pxf(240), p)
+        drawScrims(c)
         return out
+    }
+
+    private fun drawScrims(c: Canvas) {
+        val w = D.screenW.toFloat()
+        val h = D.screenH.toFloat()
+        val p = Paint(Paint.DITHER_FLAG)
+        p.shader = LinearGradient(0f, h, 0f, 0f,
+            intArrayOf(C.shade(0.92f), C.shade(0.6f), C.shade(0f)), floatArrayOf(0f, 0.24f, 0.54f), Shader.TileMode.CLAMP)
+        c.drawRect(0f, 0f, w, h, p)
+        p.shader = LinearGradient(0f, 0f, w, 0f,
+            intArrayOf(C.shade(0.72f), C.shade(0.32f), C.shade(0f)), floatArrayOf(0f, 0.36f, 0.6f), Shader.TileMode.CLAMP)
+        c.drawRect(0f, 0f, w, h, p)
+        p.shader = LinearGradient(0f, 0f, 0f, pxf(240), C.shade(0.55f), C.shade(0f), Shader.TileMode.CLAMP)
+        c.drawRect(0f, 0f, w, pxf(240), p)
     }
 
     /**
@@ -158,18 +171,22 @@ object Backdrop {
 
 /**
  * A frosted surface: the pre-shaded blur behind it, a soft white sheen from top to bottom, and a hairline edge.
- * Three cheap draws, no filters. [radii] is the usual 8-value corner array; [squircle] uses the icon shape instead.
+ * Everything is a rounded rectangle, never a path: on the TCL's GPU driver a path is re-tessellated on the CPU
+ * every frame, while a rounded rect is a shader. [radius] is the corner radius; [bottomOnly] squares the top
+ * corners (for the banner hanging from the screen edge); [squircle] uses the icon-tile proportion.
  * [top]/[bottom] are the sheen's white alphas (the window is .17 → .08, lighter pills .22 → .16).
  */
 class Glass(
     private val host: View,
-    private val radii: FloatArray = all(0f),
+    private val radius: Float = 0f,
+    private val bottomOnly: Boolean = false,
     private val squircle: Boolean = false,
     private val top: Float = 0.17f,
     private val bottom: Float = 0.08f,
 ) : Drawable() {
-    private val path = Path()
     private val rect = RectF()
+    private val shape = RectF()
+    private var r = radius
     private val matrix = Matrix()
     private val loc = IntArray(2)
     private var shaderFor: Bitmap? = null
@@ -186,17 +203,16 @@ class Glass(
 
     override fun onBoundsChange(b: Rect) {
         rect.set(b)
-        path.reset()
-        if (squircle) {
-            Squircle.path(rect.width(), rect.height(), path)
-            path.offset(rect.left, rect.top)
-        } else {
-            path.addRoundRect(rect, radii, Path.Direction.CW)
-        }
+        r = if (squircle) rect.width() * 0.28f else radius
+        shape.set(rect)
+        // Square top corners: the rounded rect simply starts above the view, and the draw is clipped to it.
+        if (bottomOnly) shape.top -= r
         sheen.shader = LinearGradient(0f, b.top.toFloat(), 0f, b.bottom.toFloat(), C.white(top), C.white(bottom), Shader.TileMode.CLAMP)
     }
 
     override fun draw(canvas: Canvas) {
+        val clip = bottomOnly
+        if (clip) { canvas.save(); canvas.clipRect(rect) }
         val bmp = Backdrop.blurred
         if (bmp != null) {
             if (shaderFor !== bmp) {
@@ -208,17 +224,17 @@ class Glass(
             // Undo the host's own scale/translation animations so the glass stays pinned to the art behind it.
             matrix.postTranslate(-loc[0].toFloat(), -loc[1].toFloat())
             art.shader.setLocalMatrix(matrix)
-            canvas.drawPath(path, art)
+            canvas.drawRoundRect(shape, r, r, art)
         } else {
-            canvas.drawPath(path, fallback)
+            canvas.drawRoundRect(shape, r, r, fallback)
         }
-        canvas.drawPath(path, sheen)
-        canvas.drawPath(path, edge)
+        canvas.drawRoundRect(shape, r, r, sheen)
+        canvas.drawRoundRect(shape, r, r, edge)
+        if (clip) canvas.restore()
     }
 
     override fun getOutline(outline: Outline) {
-        if (squircle) outline.setRoundRect(bounds, bounds.width() * 0.28f)
-        else outline.setRoundRect(bounds, radii[0])
+        outline.setRoundRect(bounds, r)
         outline.alpha = 1f
     }
 
@@ -226,11 +242,6 @@ class Glass(
     override fun setColorFilter(cf: ColorFilter?) {}
     @Deprecated("Deprecated in Java")
     override fun getOpacity() = PixelFormat.TRANSLUCENT
-
-    companion object {
-        fun all(r: Float) = FloatArray(8) { r }
-        fun bottomOnly(r: Float) = floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
-    }
 }
 
 /** A filled rounded rectangle (pills, chips, badges). */
@@ -244,3 +255,38 @@ fun pill(color: Int, radius: Float, stroke: Int = 0) = GradientDrawable().apply 
 fun sceneBackground() = GradientDrawable(
     GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFF1E1A3E.toInt(), 0xFF15142D.toInt(), 0xFF0D0D1B.toInt())
 )
+
+/**
+ * Focus art for the dock, rendered once and drawn as plain bitmaps (real-time shadows are tessellated per frame
+ * on this class of GPU): a soft dark shadow with a faint white glow, and a white ring that follows the tile's shape.
+ */
+object Halo {
+    /** A square bitmap [size] wide: shadow below and glow around a squircle [tile] wide, centred. */
+    fun glow(size: Int, tile: Int): Bitmap {
+        val b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b)
+        val path = Squircle.path(tile.toFloat(), tile.toFloat())
+        val inset = (size - tile) / 2f
+        c.save()
+        c.translate(inset, inset + tile * 0.22f)
+        c.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = C.shade(0.7f); maskFilter = BlurMaskFilter(tile * 0.32f, BlurMaskFilter.Blur.NORMAL) })
+        c.restore()
+        c.save()
+        c.translate(inset, inset)
+        c.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = C.white(0.5f); maskFilter = BlurMaskFilter(tile * 0.26f, BlurMaskFilter.Blur.OUTER) })
+        c.restore()
+        return b
+    }
+
+    /** A [size]-wide squircle ring, [stroke] px thick, just inside the edge. */
+    fun ring(size: Int, stroke: Float): Bitmap {
+        val b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = stroke; color = C.white(0.95f) }
+        c.save()
+        c.translate(stroke / 2, stroke / 2)
+        c.drawPath(Squircle.path(size - stroke, size - stroke), p)
+        c.restore()
+        return b
+    }
+}

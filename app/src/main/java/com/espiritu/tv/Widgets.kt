@@ -39,7 +39,7 @@ class PillButton(
     private val icon = ImageView(ctx)
     private val label = ctx.label(textSize, Fonts.semibold)
     private val white = pill(C.WHITE, pxf(height / 2f))
-    private val glass = Glass(this, Glass.all(pxf(height / 2f)), top = 0.24f, bottom = 0.16f)
+    private val glass = Glass(this, radius = pxf(height / 2f), top = 0.24f, bottom = 0.16f)
 
     var text: String
         get() = label.text.toString()
@@ -78,9 +78,10 @@ class PillButton(
         label.typeface = if (solid) Fonts.semibold else Fonts.medium
         icon.imageTintList = android.content.res.ColorStateList.valueOf(if (solid) C.BUTTON_INK else C.WHITE)
         // An unfocused primary sits back a little, so the focused button reads clearly from across the room.
+        // No elevation shadow: this class of GPU re-tessellates shadows every frame of the animation.
         alpha = if (!focused && primary) 0.82f else 1f
         animate().scaleX(if (focused) 1.1f else 1f).scaleY(if (focused) 1.1f else 1f)
-            .translationZ(if (focused) pxf(18) else 0f).setDuration(160).setInterpolator(DecelerateInterpolator()).start()
+            .setDuration(160).setInterpolator(DecelerateInterpolator()).start()
     }
 }
 
@@ -90,7 +91,7 @@ fun Context.glassChip(text: String, height: Int, textSize: Int, padding: Int): T
         gravity = Gravity.CENTER
         setPadding(px(padding), 0, px(padding), 0)
         minimumHeight = px(height)
-        background = Glass(this, Glass.all(pxf(height / 2f)), top = 0.24f, bottom = 0.14f)
+        background = Glass(this, radius = pxf(height / 2f), top = 0.24f, bottom = 0.14f)
     }
 
 /** The squircle avatar: a pastel tile with the profile's initial, linking to Settings. */
@@ -109,7 +110,7 @@ class Avatar(ctx: Context, size: Int) : FrameLayout(ctx) {
             override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height, v.width * 0.28f); o.alpha = 0.6f }
         }
         setOnFocusChangeListener { _, f ->
-            animate().scaleX(if (f) 1.14f else 1f).scaleY(if (f) 1.14f else 1f).translationZ(if (f) pxf(16) else 0f).setDuration(160).start()
+            animate().scaleX(if (f) 1.14f else 1f).scaleY(if (f) 1.14f else 1f).setDuration(160).start()
         }
     }
 

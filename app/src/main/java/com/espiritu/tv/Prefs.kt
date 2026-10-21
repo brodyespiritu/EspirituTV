@@ -43,10 +43,33 @@ class Prefs(ctx: Context) {
         get() = sp.getString(KEY_PROFILE, "")!!.trim().ifEmpty { "Espiritu" }
         set(v) = sp.edit().putString(KEY_PROFILE, v.trim()).apply()
 
+    /** The user's own TMDB API key (set with install.sh --tmdb-key); trailers need it. */
+    var tmdbKey: String
+        get() = sp.getString(KEY_TMDB, "")!!.trim()
+        set(v) = sp.edit().putString(KEY_TMDB, v.trim()).apply()
+
+    /** What the user said an app is playing, for apps whose sessions carry no title (Hulu's TV app): "pkg|name" lines. */
+    fun watching(pkg: String): String? =
+        sp.getString(KEY_WATCHING, "")!!.split('\n').firstOrNull { it.startsWith("$pkg|") }?.substringAfter('|')?.trim()?.ifEmpty { null }
+
+    fun setWatching(pkg: String, name: String) {
+        val rest = sp.getString(KEY_WATCHING, "")!!.split('\n').filter { it.isNotBlank() && !it.startsWith("$pkg|") }
+        val lines = if (name.isBlank()) rest else rest + "$pkg|${name.trim()}"
+        sp.edit().putString(KEY_WATCHING, lines.joinToString("\n")).apply()
+    }
+
+    /** Trailers behind Home, when a key is set. */
+    var trailers: Boolean
+        get() = sp.getBoolean(KEY_TRAILERS, true)
+        set(v) = sp.edit().putBoolean(KEY_TRAILERS, v).apply()
+
     private companion object {
         const val KEY_DOCK = "dock"
         const val KEY_HIDDEN = "hidden"
         const val KEY_UP_NEXT = "upnext"
         const val KEY_PROFILE = "profile"
+        const val KEY_TMDB = "tmdb"
+        const val KEY_TRAILERS = "trailers"
+        const val KEY_WATCHING = "watching"
     }
 }

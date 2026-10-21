@@ -21,11 +21,20 @@ To see the screen with sample history (a show left half-way, and one watched the
 
 ## What's on the screen
 
-- **Background** – if you left a show part-way (last 4 days), its art fills the screen with **Resume** and how
-  many minutes are left. Otherwise a popular show from the app focused in the dock, rotating every 14 s.
-- **Weekly banner** (top right) – appears when a show has been watched on the same weekday in 3 of the last 6
-  weeks; shows *Tonight* on that day. Disappears when there's nothing like that.
+- **Background** – a popular show from the app focused in the dock (nothing tagged Horror), rotating every 14 s.
+  With a TMDB key set (`./install.sh <ip> --tmdb-key KEY`, free from themoviedb.org/settings/api), each still
+  gives way after 7 s to the show's trailer, muted, with a 600 ms crossfade in and out, then the next still.
+  Trailers come from YouTube's embedded player and are off with no key; toggle them in Settings.
+  To try the effect without an account, `--tmdb-key yt:VIDEOID` plays that one YouTube video for every show.
+- **Banner** (top right) – *Continue watching* for a show you left part-way (last 4 days): where you stopped
+  and the minutes left, OK resumes the app. Otherwise the show you watch on the same weekday (3 of the last 6
+  weeks), with *Tonight* on that day. Nothing when there's neither. `./install.sh <ip> --history` prints what
+  the TV has recorded. Home reads the TV's media sessions whenever it's in front (TCL kills background apps, so
+  a live listener alone misses things). Hulu's TV app reports position but no title: the banner then says
+  *On Hulu · 30 min in* until you hold OK on it and type the show's name (or
+  `./install.sh <ip> --watching com.hulu.livingroomplus "The Mentalist"`).
 - **Dock** – your apps (hold OK for options: move, remove, hide, uninstall), then All apps, Inputs, Settings.
+  The focused app grows to 1.5×, gets a white ring and a glow, and the rest dim.
 - **Add to Up Next** – saves the show; saved shows lead that app's rotation.
 
 Watch history comes from the TV's media sessions (what Netflix, YouTube TV… report as playing), via the

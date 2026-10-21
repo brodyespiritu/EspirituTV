@@ -55,16 +55,16 @@ object Brands {
         "com.google.android.youtube.tvunplugged" to YOUTUBE_TV,
     )
 
-    // Hand-picked current hits per service (TVmaze ids). Art and details are fetched live.
-    private val NETFLIX_SHOWS = Provider("Netflix", listOf(2993, 53647, 43687, 42966))
-    private val HBO_SHOWS = Provider("HBO Max", listOf(46562, 75632, 51394, 44778))
+    // Hand-picked current hits per service (TVmaze ids), nothing tagged Horror. Art and details are fetched live.
+    private val NETFLIX_SHOWS = Provider("Netflix", listOf(53647, 43687, 42966, 77060))
+    private val HBO_SHOWS = Provider("HBO Max", listOf(75632, 51394, 44778, 54914))
     private val DISNEY_SHOWS = Provider("Disney+", listOf(52341, 63234, 48108, 38963))
     private val HULU_SHOWS = Provider("Hulu", listOf(54198, 48830, 37336, 75030))
     private val PRIME_SHOWS = Provider("Prime Video", listOf(15299, 43031, 49041, 33352))
     private val APPLE_SHOWS = Provider("Apple TV", listOf(44933, 44458, 45039, 75605))
     private val PARAMOUNT_SHOWS = Provider("Paramount+", listOf(53777, 59344, 48090, 78665))
     private val PEACOCK_SHOWS = Provider("Peacock", listOf(526, 54128, 42289, 64977))
-    private val CRUNCHYROLL_SHOWS = Provider("Crunchyroll", listOf(73023, 69956, 48450))
+    private val CRUNCHYROLL_SHOWS = Provider("Crunchyroll", listOf(73023, 69956, 59698))
 
     private val providers = mapOf(
         "com.netflix.ninja" to NETFLIX_SHOWS,
