@@ -1,0 +1,5 @@
+<resources>
+    <color name="bg">#FF06060F</color>
+    <color name="text_dim">#9EEBEBF5</color>
+    <color name="text_faint">#73FFFFFF</color>
+</resources>

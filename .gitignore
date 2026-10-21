@@ -1,0 +1,9 @@
+# Build output and local machine paths; dist/ and the APKs are produced by release.sh / the Build step.
+build/
+.gradle/
+.idea/
+*.iml
+local.properties
+dist/
+*.apk
+.kotlin/
