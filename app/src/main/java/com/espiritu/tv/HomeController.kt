@@ -44,6 +44,8 @@ class HomeController(
     private var lastInput = SystemClock.uptimeMillis()
     /** A trailer is being looked up or playing for [currentShow]. */
     private var trailerWanted = false
+    /** Trailers play at most this long before the still comes back and the rotation moves on. */
+    private val trailerCap = Runnable { endTrailer() }
     /** New on every Home visit: the rotation's order, and which turns get a trailer (every other one). */
     private var visitSeed = 0L
     private var turns = 0
@@ -71,6 +73,7 @@ class HomeController(
             main.post {
                 if (g != popGen) return@post
                 if (id == null) { trailerWanted = false; return@post }
+                view.trailer.sound = prefs.trailerSound
                 view.trailer.play(id, cover)
             }
         }
@@ -98,9 +101,10 @@ class HomeController(
         main.removeCallbacks(rotate)
         main.removeCallbacks(switchProvider)
         main.removeCallbacks(startTrailer)
+        main.removeCallbacks(trailerCap)
         trailerWanted = false
         view.trailer.release()
-        view.trailerShown(false)
+        view.resetTrailer()
     }
 
     /** Nobody has touched the remote for a while: no rotation, no trailers, no WebView. */
@@ -122,9 +126,10 @@ class HomeController(
         if (Trailers.enabled(prefs)) { if (currentShow != null && !trailerWanted) scheduleTrailer() }
         else {
             main.removeCallbacks(startTrailer)
+            main.removeCallbacks(trailerCap)
             trailerWanted = false
             view.trailer.release()
-            view.trailerShown(false)
+            view.resetTrailer()
         }
     }
 
@@ -147,9 +152,9 @@ class HomeController(
             val playShow = play?.takeIf { it.showGuess.isNotBlank() }?.let { Catalog.resolve(it.guesses) }
             val playApp = play?.let { app(it.pkg) }
             // No show art (app sent no title): the app's own banner card stands in.
-            val playArt = playShow?.art?.let { Images.load(it, px(192 * 1.5f)) } ?: playApp?.card
+            val playArt = playShow?.let(::artUrl)?.let { Images.load(it, px(192 * 1.5f)) } ?: playApp?.card
             val weeklyShow = weekly?.let { Catalog.resolve(listOf(it.play.showGuess) + it.play.guesses) }
-            val weeklyArt = weeklyShow?.art?.let { Images.load(it, px(192 * 1.5f)) }
+            val weeklyArt = weeklyShow?.let(::artUrl)?.let { Images.load(it, px(192 * 1.5f)) }
             main.post {
                 if (g != gen) return@post
                 continuePkg = play?.pkg
@@ -174,9 +179,13 @@ class HomeController(
         if (ids.isEmpty()) return
         val g = ++popGen
         main.removeCallbacks(startTrailer)
+        main.removeCallbacks(trailerCap)
         trailerWanted = false
-        if (view.trailer.playing) view.trailer.stop()
-        view.trailerShown(false)
+        // A trailer still up (the dock moved to another app): fade back to stills while the next one loads.
+        if (view.trailer.playing) {
+            view.trailer.fadeOutSound()
+            view.concealTrailer { view.trailer.stop() }
+        } else view.trailer.stop()
         io.execute {
             // Walk the list from [index] to the first show that isn't tagged Horror.
             var i = ((index % ids.size) + ids.size) % ids.size
@@ -186,7 +195,9 @@ class HomeController(
                 if (s != null && s.genres.none { it.equals("Horror", ignoreCase = true) }) { show = s; break }
                 i = (i + 1) % ids.size
             }
-            val raw = show?.art?.let { Images.load(it, D.screenW) }
+            val url = show?.let(::artUrl)
+            val raw = url?.let { Images.load(it, D.screenW) }
+            val creditText = when { raw == null -> null; url!!.contains("image.tmdb.org") -> "Art: TMDB"; else -> "Art: TVmaze" }
             val frame = if (show != null) ready(Backdrop.compose(raw)) else null
             val blur = frame?.let(Backdrop::blurOf)
             val picked = i
@@ -210,7 +221,7 @@ class HomeController(
                     actions.toast(if (saved) "${show.name} added to Up Next" else "${show.name} removed from Up Next")
                 }
                 view.setDots(ids.size, picked)
-                view.setArt(frame, raw != null)
+                view.setArt(frame, creditText)
                 Backdrop.apply(blur)
                 // Every other turn gets the trailer, so the rotation mixes stills and video.
                 turns++
@@ -227,19 +238,28 @@ class HomeController(
     // ---- TrailerView.Listener ----
 
     override fun onTrailerPlaying() {
-        view.trailerShown(true)
-        view.trailer.reveal { view.trailerCovered() }
+        view.revealTrailer()
+        main.removeCallbacks(trailerCap)
+        main.postDelayed(trailerCap, TRAILER_MAX_MS)
     }
 
-    override fun onTrailerEnded() {
+    override fun onTrailerEnded() = endTrailer()
+
+    /** The still fades back over the trailer (sound fading with it), then the rotation moves on. */
+    private fun endTrailer() {
+        main.removeCallbacks(trailerCap)
+        if (!trailerWanted && !view.trailer.playing) return
         trailerWanted = false
-        view.artVisible()
-        view.trailer.conceal {
-            view.trailerShown(false)
+        view.trailer.fadeOutSound()
+        view.concealTrailer {
+            view.trailer.stop()
             val pkg = popularPkg
             if (pkg != null && popularCount > 1 && !idle()) loadPopular(pkg, popularIndex + 1)
         }
     }
+
+    /** Text-free built-in backdrop when the show is a curated one, else TVmaze's. */
+    private fun artUrl(show: Show): String? = Brands.backdrop(show.id) ?: show.art
 
     private fun app(pkg: String) = dockApps.firstOrNull { it.pkg == pkg } ?: allApps.firstOrNull { it.pkg == pkg }
 
@@ -255,6 +275,7 @@ class HomeController(
     private companion object {
         const val ROTATE_MS = 14_000L
         const val PHOTO_MS = 7_000L
+        const val TRAILER_MAX_MS = 45_000L
         const val IDLE_MS = 10 * 60_000L
     }
 }

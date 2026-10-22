@@ -69,8 +69,10 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
 
         home = HomeView(this, this)
         setContentView(home)
-        // Home always covers the window, so nothing should be painted underneath it.
+        // Home always covers the window, so nothing should be painted underneath it. The window can be see-through
+        // where the trailer's own surface sits behind it.
         window.setBackgroundDrawable(null)
+        window.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
         // The dock frame and its three system tiles show on the first frame; apps fill in as soon as they're read.
         home.dock.setApps(emptyList(), null)
         home.avatar.setName(prefs.profile)
@@ -351,6 +353,10 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
                 prefs.trailers = !prefs.trailers
                 controller.trailersChanged()
                 toast(if (prefs.trailers) "Trailers on" else "Trailers off")
+            }
+            if (prefs.trailers) option(R.drawable.ic_play, if (prefs.trailerSound) "Trailer sound: on" else "Trailer sound: off") {
+                prefs.trailerSound = !prefs.trailerSound
+                toast(if (prefs.trailerSound) "Trailer sound on (from the next trailer)" else "Trailer sound off (from the next trailer)")
             }
             val overlayOk = Settings.canDrawOverlays(this@MainActivity)
             option(R.drawable.ic_info, when {

@@ -56,6 +56,8 @@ object Squircle {
  */
 object Backdrop {
     var blurred: Bitmap? = null; private set
+    /** 0 = glass frosts the still; 1 = a trailer plays underneath and the glass is smoked, letting the video through. */
+    var videoMix = 0f; private set
     private val surfaces = ArrayList<WeakReference<View>>()
     private var empty: Bitmap? = null
     private var scrims: Bitmap? = null
@@ -65,6 +67,17 @@ object Backdrop {
     /** Main thread: switches every glass surface to [blurredArt] (from [blurOf]). */
     fun apply(blurredArt: Bitmap?) {
         blurred = blurredArt
+        invalidateAll()
+    }
+
+    /** Main thread: moves every glass surface between frosted-still (0) and see-through-to-video (1). */
+    fun setVideoMix(v: Float) {
+        if (v == videoMix) return
+        videoMix = v
+        invalidateAll()
+    }
+
+    private fun invalidateAll() {
         surfaces.removeAll { it.get() == null }
         surfaces.forEach { it.get()?.invalidate() }
     }
@@ -195,6 +208,8 @@ class Glass(
     private val art = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val sheen = Paint(Paint.ANTI_ALIAS_FLAG)
     private val fallback = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xE6202028.toInt() }
+    /** Over a playing trailer: dark enough for white text, clear enough for the video to play through. */
+    private val smoke = Paint(Paint.ANTI_ALIAS_FLAG)
     private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = pxf(1.5f)
@@ -216,19 +231,29 @@ class Glass(
         val clip = bottomOnly
         if (clip) { canvas.save(); canvas.clipRect(rect) }
         val bmp = if (plain) null else Backdrop.blurred
-        if (bmp != null) {
-            if (shaderFor !== bmp) {
-                art.shader = BitmapShader(bmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-                shaderFor = bmp
+        // While a trailer plays, the frosted still fades out of the glass and smoke fades in: the video shows through.
+        val mix = if (plain) 0f else Backdrop.videoMix
+        if (mix < 1f) {
+            if (bmp != null) {
+                if (shaderFor !== bmp) {
+                    art.shader = BitmapShader(bmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+                    shaderFor = bmp
+                }
+                host.getLocationInWindow(loc)
+                matrix.setScale(D.screenW.toFloat() / bmp.width, D.screenH.toFloat() / bmp.height)
+                // Undo the host's own scale/translation animations so the glass stays pinned to the art behind it.
+                matrix.postTranslate(-loc[0].toFloat(), -loc[1].toFloat())
+                art.shader.setLocalMatrix(matrix)
+                art.alpha = ((1f - mix) * 255).toInt()
+                canvas.drawRoundRect(shape, r, r, art)
+            } else {
+                fallback.alpha = ((1f - mix) * 0xE6).toInt()
+                canvas.drawRoundRect(shape, r, r, fallback)
             }
-            host.getLocationInWindow(loc)
-            matrix.setScale(D.screenW.toFloat() / bmp.width, D.screenH.toFloat() / bmp.height)
-            // Undo the host's own scale/translation animations so the glass stays pinned to the art behind it.
-            matrix.postTranslate(-loc[0].toFloat(), -loc[1].toFloat())
-            art.shader.setLocalMatrix(matrix)
-            canvas.drawRoundRect(shape, r, r, art)
-        } else {
-            canvas.drawRoundRect(shape, r, r, fallback)
+        }
+        if (mix > 0f) {
+            smoke.color = 0x101018 or ((mix * 0x70).toInt() shl 24)
+            canvas.drawRoundRect(shape, r, r, smoke)
         }
         canvas.drawRoundRect(shape, r, r, sheen)
         canvas.drawRoundRect(shape, r, r, edge)

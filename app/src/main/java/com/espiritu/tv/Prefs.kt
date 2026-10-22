@@ -58,6 +58,11 @@ class Prefs(ctx: Context) {
         sp.edit().putString(KEY_WATCHING, lines.joinToString("\n")).apply()
     }
 
+    /** Trailers behind Home play with sound. */
+    var trailerSound: Boolean
+        get() = sp.getBoolean(KEY_TRAILER_SOUND, true)
+        set(v) = sp.edit().putBoolean(KEY_TRAILER_SOUND, v).apply()
+
     /** CNAW2 news banners over whatever is on screen. */
     var newsAlerts: Boolean
         get() = sp.getBoolean(KEY_NEWS, true)
@@ -82,6 +87,7 @@ class Prefs(ctx: Context) {
         const val KEY_TRAILERS = "trailers"
         const val KEY_WATCHING = "watching"
         const val KEY_NEWS = "news"
+        const val KEY_TRAILER_SOUND = "trailerSound"
         const val KEY_NEWS_ID = "newsId"
     }
 }

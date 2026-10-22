@@ -22,7 +22,10 @@ To see the screen with sample history (a show left half-way, and one watched the
 ## What's on the screen
 
 - **Background** – a popular show from the app focused in the dock (nothing tagged Horror), in a fresh order on
-  every visit to Home, rotating every 14 s. Every other show's still gives way after 7 s to its trailer, muted,
+  every visit to Home, rotating every 14 s, on text-free backdrops (TMDB's "no language" art, picked for the
+  curated shows). Every other show's still gives way after 7 s to its trailer, with sound (Settings can mute it),
+  for up to 45 s. On Android 11+ the trailer plays on its own surface behind Home, so video frames never redraw
+  the dock or text, and the frosted glass turns to smoked glass the video plays through. The trailer comes in
   with a 600 ms crossfade in and out, then the next still. The curated shows carry their YouTube trailers with
   them; a TMDB key (`./install.sh <ip> --tmdb-key KEY`, free from themoviedb.org/settings/api) adds trailers for
   anything else. Toggle trailers in Settings. `--tmdb-key yt:VIDEOID` plays that one video for every show.

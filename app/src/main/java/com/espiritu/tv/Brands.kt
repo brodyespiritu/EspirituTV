@@ -144,6 +144,46 @@ object Brands {
 
     fun trailer(tvmazeId: Int): String? = trailers[tvmazeId]
 
+    // Backdrops with no text on them (TMDB's "no language" images, checked by eye), TVmaze id → TMDB image path.
+    private val backdrops = mapOf(
+        53647 to "iHSwvRVsRyxpX7FE7GbviaDvgGZ.jpg", // Wednesday
+        43687 to "qgYK2c5Yl6h0K7s0ClLa3lIcKuV.jpg", // Squid Game
+        42966 to "6umsRLI7t0ydFwCl0JNEIO0q2LH.jpg", // Bridgerton
+        77060 to "q8BwtVM3t0SOtB1nZsXpOKZp8IM.jpg", // Nobody Wants This
+        75632 to "z3BkMbCy5ajZPMyKEUwsPHuz2cV.jpg", // The Pitt
+        51394 to "qVBIAcZkK5j6WRq7JehJcOMbdgb.jpg", // The White Lotus
+        44778 to "577eXC8wFQT0eUrJcgznSiFPRmk.jpg", // House of the Dragon
+        54914 to "bbAR4qKxjnjyKAt4YMrL725Mtfw.jpg", // Hacks
+        52341 to "quCeAmVQHfsdcYkicbxZWVauCVb.jpg", // Andor
+        63234 to "qrTAc0ZtQ859Qu5O8cixJzNJpQs.jpg", // Daredevil: Born Again
+        48108 to "sAxx25ijwYQ8xsT56wu2IzvIRss.jpg", // Percy Jackson and the Olympians
+        38963 to "9zcbqSxdsRMZWHYtyCd1nXPr2xq.jpg", // The Mandalorian
+        54198 to "aJtG4txtmiRHwAAqENQHZvBs6kY.jpg", // The Bear
+        48830 to "WCnEPf4ZNPjszndmrFlDxZ5Uvd.jpg", // Only Murders in the Building
+        37336 to "bwSmgmd90hCWwqOKQYTEraeOZhJ.jpg", // Shōgun
+        15299 to "bq28ajZaoMyzEIm6REelqyqtEDZ.jpg", // The Boys
+        43031 to "pF0qkRsrHkdYadPWY9AMeFZfcwk.jpg", // Reacher
+        49041 to "coaPCIqQBPUZsOnJcWZxhaORcDT.jpg", // Fallout
+        33352 to "o2wg8QiSCQrhj91tBfxunE3O5Ba.jpg", // The Lord of the Rings: The Rings of Power
+        44933 to "ixgFmf1X59PUZam2qbAfskx2gQr.jpg", // Severance
+        44458 to "nE94ejEbzNCU48bW1oju0dqBONz.jpg", // Ted Lasso
+        75030 to "5QsLvWh8J1mXl1W05wNJknMmhzR.jpg", // Paradise
+        45039 to "gPQppUnLx9vqPDLz3WwZ2HJsNbt.jpg", // Slow Horses
+        75605 to "qqqo3P0txcP5ES3ZQ7YR4SmUwam.jpg", // The Studio
+        53777 to "mh2UczqEXJJVgqohbyZbHTuxwhL.jpg", // Landman
+        59344 to "mNHRGO1gFpR2CYZdANe72kcKq7G.jpg", // Tulsa King
+        48090 to "fZJs6xgU9dqIg9phIXjZAZOInzy.jpg", // Star Trek: Strange New Worlds
+        78665 to "vcpj6rRDS93ImHCLPY8bwBuFGjR.jpg", // Dexter: Resurrection
+        526 to "9vMzIrMIncPmtalcxh1MOrgcE6C.jpg", // The Office
+        54128 to "ccOzCmrglAjRGtqv5ClTaBEsWt8.jpg", // Poker Face
+        42289 to "m0TiLZ79RR19Zz0AZruQSBeH39x.jpg", // Love Island
+        64977 to "enVrO8TRkdT8dmYXTfI4sEjR5Kp.jpg", // The Day of the Jackal
+        59698 to "lysUnU6V0VfcthDbviuVlIqgHOR.jpg", // Spy×Family
+    )
+
+    /** A text-free, screen-sized backdrop for a curated show, or null to fall back to TVmaze's art. */
+    fun backdrop(tvmazeId: Int): String? = backdrops[tvmazeId]?.let { "https://image.tmdb.org/t/p/w1280/$it" }
+
     fun of(pkg: String): Brand? = brands[pkg]
     fun provider(pkg: String): Provider? = providers[pkg]
 }
