@@ -16,8 +16,25 @@ ADB="$(command -v adb || echo "$HOME/Library/Android/sdk/platform-tools/adb")"
 [ -x "$ADB" ] || { echo "adb not found. Install it with: brew install android-platform-tools"; exit 1; }
 TV() { "$ADB" -s "$IP:5555" "$@"; }
 
-echo "Connecting to $IP… (accept the 'Allow USB debugging' prompt on the TV if it appears)"
-"$ADB" connect "$IP:5555"
+echo "Connecting to ${IP}... (accept the 'Allow USB debugging' prompt on the TV if it appears)"
+OUT="$("$ADB" connect "$IP:5555" 2>&1 || true)"
+case "$OUT" in
+  *connected*) ;;
+  *)
+    # The TV answers on the network but adb doesn't: on macOS that's usually adb's background server having lost
+    # Local Network access. A fresh server fixes it.
+    if ping -c 1 -t 2 "$IP" >/dev/null 2>&1; then
+      "$ADB" kill-server >/dev/null 2>&1 || true
+      OUT="$("$ADB" connect "$IP:5555" 2>&1 || true)"
+    fi ;;
+esac
+echo "$OUT"
+case "$OUT" in
+  *connected*) ;;
+  *) echo "Couldn't reach the TV at $IP. Check that it's on (not asleep) and on the same Wi-Fi as this Mac,"
+     echo "and that the address matches Settings > Network & Internet on the TV."
+     exit 1 ;;
+esac
 TV wait-for-device
 
 if [ "$MODE" = "--restore" ]; then
