@@ -10,8 +10,8 @@ import java.util.concurrent.ExecutorService
 /**
  * Decides what fills the Home screen and loads it off the main thread.
  * - Banner: the show left part-way (Continue watching) wins; otherwise the weekly show; otherwise nothing.
- * - Background: a popular show from the app focused in the dock (never Horror), rotating every [ROTATE_MS];
- *   with a TMDB key set, each still gives way to the show's muted trailer after [PHOTO_MS], then moves on.
+ * - Background: the lineup of the app card in focus (mostly brand-new series, never Horror), each show's
+ *   text-free backdrop drifting slowly closer, a new one every [ROTATE_MS], in a fresh order on every Home visit.
  */
 class HomeController(
     private val ctx: Context,
@@ -20,7 +20,7 @@ class HomeController(
     private val io: ExecutorService,
     private val main: Handler,
     private val actions: Actions,
-) : TrailerView.Listener {
+) {
     interface Actions {
         fun openPackage(pkg: String)
         /** Back into the show where it stopped (the app's own player for its paused session), not just the app. */
@@ -29,7 +29,7 @@ class HomeController(
         fun toast(msg: String)
     }
 
-    var dockApps: List<AppEntry> = emptyList()
+    var pinnedApps: List<AppEntry> = emptyList()
     var allApps: List<AppEntry> = emptyList()
     /** The app behind the Continue-watching banner, if any (for naming what it plays). */
     var continuePkg: String? = null; private set
@@ -42,40 +42,14 @@ class HomeController(
     private var currentShow: Show? = null
     private var pendingPkg: String? = null
     private var lastInput = SystemClock.uptimeMillis()
-    /** A trailer is being looked up or playing for [currentShow]. */
-    private var trailerWanted = false
-    /** Trailers play at most this long before the still comes back and the rotation moves on. */
-    private val trailerCap = Runnable { endTrailer() }
-    /** New on every Home visit: the rotation's order, and which turns get a trailer (every other one). */
+    /** New on every Home visit: the rotation's order. */
     private var visitSeed = 0L
-    private var turns = 0
-
-    init { view.trailer.listener = this }
 
     private val rotate = object : Runnable {
         override fun run() {
             val pkg = popularPkg
-            if (idle()) view.trailer.release()
-            else if (!view.trailer.playing && !trailerWanted && pkg != null && popularCount > 1) loadPopular(pkg, popularIndex + 1)
+            if (!idle() && pkg != null && popularCount > 1) loadPopular(pkg, popularIndex + 1)
             main.postDelayed(this, ROTATE_MS)
-        }
-    }
-
-    private val startTrailer = Runnable {
-        val show = currentShow ?: return@Runnable
-        if (idle() || !Trailers.enabled(prefs)) return@Runnable
-        val key = prefs.tmdbKey
-        val g = popGen
-        trailerWanted = true
-        io.execute {
-            val id = Trailers.find(show, key)
-            val cover = id?.let { Trailers.coverScale(it) } ?: 1f
-            main.post {
-                if (g != popGen) return@post
-                if (id == null) { trailerWanted = false; return@post }
-                view.trailer.sound = prefs.trailerSound
-                view.trailer.play(id, cover)
-            }
         }
     }
 
@@ -86,12 +60,13 @@ class HomeController(
         loadPopular(pkg, 0)
     }
 
-    /** Home is back in front: a fresh order of shows, starting over. */
+    /** Home is back in front: a fresh order of shows, starting over, and the background moving again. */
     fun start() {
         visitSeed = System.nanoTime()
-        turns = 0
         popularIndex = 0
         currentShow = null
+        view.back.motion = prefs.motion
+        view.back.resume()
         refresh()
         main.removeCallbacks(rotate)
         main.postDelayed(rotate, ROTATE_MS)
@@ -100,41 +75,28 @@ class HomeController(
     fun stop() {
         main.removeCallbacks(rotate)
         main.removeCallbacks(switchProvider)
-        main.removeCallbacks(startTrailer)
-        main.removeCallbacks(trailerCap)
-        trailerWanted = false
-        view.trailer.release()
-        view.resetTrailer()
+        view.back.pause()
     }
 
-    /** Nobody has touched the remote for a while: no rotation, no trailers, no WebView. */
+    /** Nobody has touched the remote for a while: the rotation rests (no work, no burn-in). */
     private fun idle() = SystemClock.uptimeMillis() - lastInput > IDLE_MS
 
-    /** A remote key arrived; rotation and trailers pick up again. */
+    /** A remote key arrived; the rotation picks up again. */
     fun poke() {
         val wasIdle = idle()
         lastInput = SystemClock.uptimeMillis()
         if (wasIdle) {
             main.removeCallbacks(rotate)
             main.postDelayed(rotate, ROTATE_MS)
-            if (currentShow != null && !trailerWanted) scheduleTrailer()
+            view.back.resume()
         }
     }
 
-    /** Settings toggled trailers. */
-    fun trailersChanged() {
-        if (Trailers.enabled(prefs)) { if (currentShow != null && !trailerWanted) scheduleTrailer() }
-        else {
-            main.removeCallbacks(startTrailer)
-            main.removeCallbacks(trailerCap)
-            trailerWanted = false
-            view.trailer.release()
-            view.resetTrailer()
-        }
-    }
+    /** Settings toggled the background drift. */
+    fun motionChanged() { view.back.motion = prefs.motion }
 
-    /** Focus moved in the dock: after a short pause, the background follows that app. */
-    fun dockFocused(app: AppEntry?) {
+    /** Focus moved onto an app card: after a short pause, the background follows that app. */
+    fun appFocused(app: AppEntry?) {
         app ?: return
         if (Brands.provider(app.pkg) == null || app.pkg == popularPkg) return
         pendingPkg = app.pkg
@@ -142,7 +104,7 @@ class HomeController(
         main.postDelayed(switchProvider, 350)
     }
 
-    /** Re-reads watch history for the banner and the dock dot. Safe to call often; stale loads are dropped. */
+    /** Re-reads watch history for the banner and the card dot. Safe to call often; stale loads are dropped. */
     fun refresh() {
         val g = ++gen
         io.execute {
@@ -150,6 +112,7 @@ class HomeController(
             val play = History.inProgress()
             val weekly = if (play == null) History.weekly() else null
             val playShow = play?.takeIf { it.showGuess.isNotBlank() }?.let { Catalog.resolve(it.guesses) }
+            val playEp = play?.let { Catalog.episodeOf(playShow, it) }
             val playApp = play?.let { app(it.pkg) }
             // No show art (app sent no title): the app's own banner card stands in.
             val playArt = playShow?.let(::artUrl)?.let { Images.load(it, px(192 * 1.5f)) } ?: playApp?.card
@@ -159,11 +122,11 @@ class HomeController(
                 if (g != gen) return@post
                 continuePkg = play?.pkg
                 when {
-                    play != null -> view.banner.setContinue(play, playShow, playArt, playApp?.label ?: Brands.provider(play.pkg)?.name ?: play.pkg) { actions.resumePlayback(play.pkg) }
+                    play != null -> view.banner.setContinue(play, playShow, playEp, playArt, playApp?.label ?: Brands.provider(play.pkg)?.name ?: play.pkg) { actions.resumePlayback(play.pkg) }
                     weekly != null -> view.banner.setWeekly(weekly, weeklyShow, weeklyArt) { actions.openPackage(weekly.play.pkg) }
                     else -> view.banner.hide()
                 }
-                view.dock.setRunning(play?.pkg)
+                view.grid.setRunning(play?.pkg)
                 if (currentShow == null) {
                     val pkg = popularPkg ?: firstProvider().also { popularPkg = it }
                     loadPopular(pkg, popularIndex)
@@ -178,14 +141,6 @@ class HomeController(
         val ids = (prefs.upNextIds(pkg) + provider.shows.shuffled(java.util.Random(visitSeed xor pkg.hashCode().toLong()))).distinct()
         if (ids.isEmpty()) return
         val g = ++popGen
-        main.removeCallbacks(startTrailer)
-        main.removeCallbacks(trailerCap)
-        trailerWanted = false
-        // A trailer still up (the dock moved to another app): fade back to stills while the next one loads.
-        if (view.trailer.playing) {
-            view.trailer.fadeOutSound()
-            view.concealTrailer { view.trailer.stop() }
-        } else view.trailer.stop()
         io.execute {
             // Walk the list from [index] to the first show that isn't tagged Horror.
             var i = ((index % ids.size) + ids.size) % ids.size
@@ -198,6 +153,7 @@ class HomeController(
             val url = show?.let(::artUrl)
             val raw = url?.let { Images.load(it, D.screenW) }
             val creditText = when { raw == null -> null; url!!.contains("image.tmdb.org") -> "Art: TMDB"; else -> "Art: TVmaze" }
+            val logo = show?.let { Brands.logo(it.id) }?.let { Images.load(it, 1000) }
             val frame = if (show != null) ready(Backdrop.compose(raw)) else null
             val blur = frame?.let(Backdrop::blurOf)
             val picked = i
@@ -212,7 +168,7 @@ class HomeController(
                 popularCount = ids.size
                 currentShow = show
                 val app = app(pkg)
-                view.hero.showPopular(Brands.of(pkg), app?.tile, provider.name, show, prefs.isUpNext(pkg, show))
+                view.hero.showPopular(Brands.of(pkg), app?.tile, provider.name, show, logo, show.id in provider.new, prefs.isUpNext(pkg, show))
                 if (app == null) view.hero.primary.text = "Get ${provider.name}"
                 view.hero.primary.setOnClickListener { actions.openPackage(pkg) }
                 view.hero.secondary.setOnClickListener {
@@ -223,49 +179,18 @@ class HomeController(
                 view.setDots(ids.size, picked)
                 view.setArt(frame, creditText)
                 Backdrop.apply(blur)
-                // Every other turn gets the trailer, so the rotation mixes stills and video.
-                turns++
-                if (turns % 2 == 1) scheduleTrailer()
             }
         }
     }
 
-    private fun scheduleTrailer() {
-        main.removeCallbacks(startTrailer)
-        if (Trailers.enabled(prefs) && !idle()) main.postDelayed(startTrailer, PHOTO_MS)
-    }
-
-    // ---- TrailerView.Listener ----
-
-    override fun onTrailerPlaying() {
-        view.revealTrailer()
-        main.removeCallbacks(trailerCap)
-        main.postDelayed(trailerCap, TRAILER_MAX_MS)
-    }
-
-    override fun onTrailerEnded() = endTrailer()
-
-    /** The still fades back over the trailer (sound fading with it), then the rotation moves on. */
-    private fun endTrailer() {
-        main.removeCallbacks(trailerCap)
-        if (!trailerWanted && !view.trailer.playing) return
-        trailerWanted = false
-        view.trailer.fadeOutSound()
-        view.concealTrailer {
-            view.trailer.stop()
-            val pkg = popularPkg
-            if (pkg != null && popularCount > 1 && !idle()) loadPopular(pkg, popularIndex + 1)
-        }
-    }
-
-    /** Text-free built-in backdrop when the show is a curated one, else TVmaze's. */
+    /** Text-free built-in backdrop when the show is in a lineup, else TVmaze's. */
     private fun artUrl(show: Show): String? = Brands.backdrop(show.id) ?: show.art
 
-    private fun app(pkg: String) = dockApps.firstOrNull { it.pkg == pkg } ?: allApps.firstOrNull { it.pkg == pkg }
+    private fun app(pkg: String) = pinnedApps.firstOrNull { it.pkg == pkg } ?: allApps.firstOrNull { it.pkg == pkg }
 
-    /** The first streaming app in the dock, then anywhere; with none installed, HBO Max's picks with a "Get" button. */
+    /** The first streaming app among the pinned cards, then anywhere; with none installed, HBO Max's picks with a "Get" button. */
     private fun firstProvider(): String =
-        dockApps.firstOrNull { Brands.provider(it.pkg) != null }?.pkg
+        pinnedApps.firstOrNull { Brands.provider(it.pkg) != null }?.pkg
             ?: allApps.firstOrNull { Brands.provider(it.pkg) != null }?.pkg
             ?: Brands.DEFAULT_PROVIDER
 
@@ -274,8 +199,6 @@ class HomeController(
 
     private companion object {
         const val ROTATE_MS = 14_000L
-        const val PHOTO_MS = 7_000L
-        const val TRAILER_MAX_MS = 45_000L
         const val IDLE_MS = 10 * 60_000L
     }
 }

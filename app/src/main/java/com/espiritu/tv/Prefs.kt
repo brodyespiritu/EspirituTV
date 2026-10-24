@@ -43,11 +43,6 @@ class Prefs(ctx: Context) {
         get() = sp.getString(KEY_PROFILE, "")!!.trim().ifEmpty { "Espiritu" }
         set(v) = sp.edit().putString(KEY_PROFILE, v.trim()).apply()
 
-    /** The user's own TMDB API key (set with install.sh --tmdb-key); trailers need it. */
-    var tmdbKey: String
-        get() = sp.getString(KEY_TMDB, "")!!.trim()
-        set(v) = sp.edit().putString(KEY_TMDB, v.trim()).apply()
-
     /** What the user said an app is playing, for apps whose sessions carry no title (Hulu's TV app): "pkg|name" lines. */
     fun watching(pkg: String): String? =
         sp.getString(KEY_WATCHING, "")!!.split('\n').firstOrNull { it.startsWith("$pkg|") }?.substringAfter('|')?.trim()?.ifEmpty { null }
@@ -58,10 +53,10 @@ class Prefs(ctx: Context) {
         sp.edit().putString(KEY_WATCHING, lines.joinToString("\n")).apply()
     }
 
-    /** Trailers behind Home play with sound. */
-    var trailerSound: Boolean
-        get() = sp.getBoolean(KEY_TRAILER_SOUND, true)
-        set(v) = sp.edit().putBoolean(KEY_TRAILER_SOUND, v).apply()
+    /** The background drifts slowly closer (Apple TV-screensaver style). */
+    var motion: Boolean
+        get() = sp.getBoolean(KEY_MOTION, true)
+        set(v) = sp.edit().putBoolean(KEY_MOTION, v).apply()
 
     /** CNAW2 news banners over whatever is on screen. */
     var newsAlerts: Boolean
@@ -73,21 +68,14 @@ class Prefs(ctx: Context) {
         get() = sp.getLong(KEY_NEWS_ID, 0L)
         set(v) = sp.edit().putLong(KEY_NEWS_ID, v).apply()
 
-    /** Trailers behind Home, when a key is set. */
-    var trailers: Boolean
-        get() = sp.getBoolean(KEY_TRAILERS, true)
-        set(v) = sp.edit().putBoolean(KEY_TRAILERS, v).apply()
-
     private companion object {
         const val KEY_DOCK = "dock"
         const val KEY_HIDDEN = "hidden"
         const val KEY_UP_NEXT = "upnext"
         const val KEY_PROFILE = "profile"
-        const val KEY_TMDB = "tmdb"
-        const val KEY_TRAILERS = "trailers"
         const val KEY_WATCHING = "watching"
         const val KEY_NEWS = "news"
-        const val KEY_TRAILER_SOUND = "trailerSound"
+        const val KEY_MOTION = "motion"
         const val KEY_NEWS_ID = "newsId"
     }
 }

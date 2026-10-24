@@ -1,7 +1,7 @@
 # EspirituTV
 
 A fast Home screen for TCL Android TV / Google TV, built from the EspirituTV canvas design:
-full-screen show art, a frosted Apple-style dock, and a banner for the show you watch every week.
+full-screen show art, rows of Apple TV-style app cards, and a banner for the show you watch every week.
 
 ## Install
 
@@ -21,28 +21,32 @@ To see the screen with sample history (a show left half-way, and one watched the
 
 ## What's on the screen
 
-- **Background** – a popular show from the app focused in the dock (nothing tagged Horror), in a fresh order on
-  every visit to Home, rotating every 14 s, on text-free backdrops (TMDB's "no language" art, picked for the
-  curated shows). Every other show's still gives way after 7 s to its trailer, with sound (Settings can mute it),
-  for up to 45 s. On Android 11+ the trailer plays on its own surface behind Home, so video frames never redraw
-  the dock or text, and the frosted glass turns to smoked glass the video plays through. The trailer comes in
-  with a 600 ms crossfade in and out, then the next still. The curated shows carry their YouTube trailers with
-  them; a TMDB key (`./install.sh <ip> --tmdb-key KEY`, free from themoviedb.org/settings/api) adds trailers for
-  anything else. Toggle trailers in Settings. `--tmdb-key yt:VIDEOID` plays that one video for every show.
-- **Banner** (top right) – *Continue watching* for a show you left part-way (last 4 days): where you stopped
-  and the minutes left. OK goes back into the show where it stopped (the app's own player for its paused
+- **Loading screen** – while Home starts from cold (after a reboot or an update), a black screen with the
+  EspirituTV wordmark and a band of light sweeping across it from left to right, until the art is ready.
+- **Background** – the lineup of the app card that has focus: mostly series that premiered in the last few
+  months (picked from TVmaze's schedules), plus one established hit, nothing tagged Horror. Each show appears with
+  its official title logo over a text-free backdrop (TMDB art, checked by eye), drifting slowly closer like the
+  Apple TV screensaver, with a soft crossfade every 14 s and a fresh order on every visit to Home. On Android 11+
+  the art runs on its own surface behind Home, so the motion never redraws the cards or text. Brand-new series
+  read "New on …" with a *New series* tag. Turn the drift off in Settings → Background motion.
+- **Banner** (top right) – *Continue watching* for a show you left part-way (last 4 days): the episode
+  ("Season 3, Episode 7" and its name) and a progress bar. OK goes back into the show where it stopped (the app's own player for its paused
   session), not just the app. Otherwise the show you watch on the same weekday (3 of the last 6
   weeks), with *Tonight* on that day. Nothing when there's neither. `./install.sh <ip> --history` prints what
   the TV has recorded. Home reads the TV's media sessions whenever it's in front (TCL kills background apps, so
-  a live listener alone misses things). Hulu's TV app reports position but no title: the banner then says
-  *On Hulu · 30 min in* until you hold OK on it and type the show's name (or
-  `./install.sh <ip> --watching com.hulu.livingroomplus "The Mentalist"`).
+  a live listener alone misses things). Hulu's TV app reports neither the show nor the episode: hold OK on the
+  banner and type both once (or `./install.sh <ip> --watching com.hulu.livingroomplus "The Mentalist" S3E7`);
+  after that the TV moves to the next episode by itself each time one starts from the top.
 - **CNAW2 news banners** – when cnaw2news.com publishes an article, it slides in as the same banner at the top
   right over whatever is on screen (a playing show included), stays five seconds and slides away. A small
   watcher checks the site's public feed once a minute; `install.sh` grants the "draw over other apps"
   permission it needs. Toggle it in Settings, or try it with `./install.sh <ip> --news-test`.
-- **Dock** – your apps (hold OK for options: move, remove, hide, uninstall), then All apps, Inputs, Settings.
-  The focused app grows to 1.5×, gets a white ring and a glow, and the rest dim.
+- **App cards** – five to a row under the show, in tvOS's 5:3 shape with Apple's continuous corners: your pinned
+  apps first, then every other app, then Inputs and Settings. Each card is the app's own horizontal TV banner
+  (the logo art Netflix, YouTube, Disney+… make for TV launchers); apps without one get their icon's background
+  carried across the card so the logo and the card read as one. The focused card grows 1.1× with a white ring, a glow and its
+  name beneath. Press down past the first row and the show fades back while the rows scroll up. Hold OK (or
+  MENU) on an app for options: pin to the front, move, hide, uninstall.
 - **Add to Up Next** – saves the show; saved shows lead that app's rotation.
 
 Watch history comes from the TV's media sessions (what Netflix, YouTube TV… report as playing), via the
@@ -53,8 +57,8 @@ notification-listener permission `install.sh` grants. It stays on the TV. Art an
 
 No frameworks, no web views, one ~1 MB APK. The show art and its shading are composed into a single screen-sized
 bitmap off the main thread, so each frame draws one picture plus the small glass surfaces; the frosted glass samples
-a 160 × 90 pre-blurred, pre-tinted copy of it (a texture lookup, no filters). App tiles are rendered once and cached
-on disk. Images are decoded no larger than the screen (16-bit on low-RAM TVs), network data is cached for weeks,
+a 160 × 90 pre-blurred, pre-tinted copy of it (a texture lookup, no filters). App cards are rendered once (already rounded) and
+cached on disk. Images are decoded no larger than the screen (16-bit on low-RAM TVs), network data is cached for weeks,
 nothing touches the network or disk on the main thread, and the art stops rotating after 10 minutes without a key
 press. Measured on a 1080p emulator: 6 ms median frame, 0 janky frames, ~46 MB of memory.
 

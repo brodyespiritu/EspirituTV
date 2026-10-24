@@ -88,30 +88,28 @@ class BannerView(ctx: Context) : LinearLayout(ctx) {
     }
 
     /**
-     * The show left part-way: where it stopped, and how much is left. An app that sends no title shows as
-     * "On Hulu" with how far in it is, until the user names it (hold OK on the banner).
+     * The show left part-way, and which episode: "Season 3, Episode 7 · Red Sky at Night", with the progress bar
+     * when the app says how long it is. An app that sends nothing (Hulu) asks to be told, once: hold OK.
      */
-    fun setContinue(play: Play, show: Show?, art: Bitmap?, appLabel: String, onClick: () -> Unit) {
+    fun setContinue(play: Play, show: Show?, ep: Catalog.Episode?, art: Bitmap?, appLabel: String, onClick: () -> Unit) {
         headIcon.setImageResource(R.drawable.ic_play_fill)
         head.text = "Continue watching"
         val known = show?.name ?: play.showGuess
         name.text = known.ifBlank { "On $appLabel" }
-        val ep = when {
-            show != null && play.title.isNotBlank() && !show.name.equals(play.title, ignoreCase = true) -> play.title
-            known.isNotBlank() -> appLabel
-            else -> "Hold OK to name it"
+        // The episode on one line, its name (when known) on the next.
+        line.text = when {
+            ep != null -> "Season ${ep.season}, Episode ${ep.number}" + (if (ep.name.isNotBlank()) "\n${ep.name}" else "")
+            known.isBlank() -> "Hold OK to name it"
+            else -> "Hold OK to add the episode"
         }
-        line.text = ep
+        line.maxLines = 2
         line.gone(false)
         badge.gone(true)
         val frac = if (play.duration > 0) (play.position.toFloat() / play.duration).coerceIn(0f, 1f) else 0f
-        left.text = when {
-            play.duration > 0 -> "${((play.duration - play.position) / 60_000).coerceAtLeast(1)} min left"
-            play.position > 0 -> "${play.position / 60_000} min in"
-            else -> ""
-        }
+        left.text = ""
+        left.gone(true)
         track.gone(play.duration <= 0)
-        progressRow.gone(left.text.isEmpty())
+        progressRow.gone(play.duration <= 0)
         progressRow.post { fill.layoutParams = (fill.layoutParams as FrameLayout.LayoutParams).apply { width = (track.width * frac).toInt() } }
         show(art, onClick)
     }
@@ -127,7 +125,9 @@ class BannerView(ctx: Context) : LinearLayout(ctx) {
         val at = show?.time?.let(::clock) ?: clock(weekly.minuteOfDay)
         val where = show?.network ?: ""
         line.text = listOf(if (tonight) "Tonight" else day, at, where).filter { it.isNotBlank() }.joinToString(" · ")
+        line.maxLines = 1
         line.gone(false)
+        left.gone(false)
         progressRow.gone(true)
         show(art, onClick)
     }

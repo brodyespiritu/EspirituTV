@@ -17,7 +17,6 @@ import java.util.Locale
  *   adb shell am broadcast -a com.espiritu.tv.DUMP       print the watch history to logcat (tag EspirituTV)
  *   adb shell am broadcast -a com.espiritu.tv.WATCHING --es pkg com.hulu.livingroomplus --es name "The Mentalist"
  *                                                        name what an app that sends no title is playing
- *   adb shell am broadcast -a com.espiritu.tv.TMDB_KEY --es key XXX   set (or, with no key, clear) the TMDB key for trailers
  */
 class DevReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
@@ -35,12 +34,9 @@ class DevReceiver : BroadcastReceiver() {
                     Prefs(ctx).setWatching(pkg, name)
                     if (name.isNotBlank()) History.relabel(ctx, pkg, name, old)
                     MediaWatcher.scan(ctx)
+                    intent.getStringExtra("episode")?.let(History::seasonEpisode)?.let { (s, e) -> History.setEpisode(ctx, pkg, s, e) }
                     Log.i(TAG, "$pkg is playing: ${name.ifBlank { "(cleared)" }}")
                 }
-            }
-            "com.espiritu.tv.TMDB_KEY" -> {
-                Prefs(ctx).tmdbKey = intent.getStringExtra("key").orEmpty()
-                Log.i(TAG, "TMDB key " + (if (Prefs(ctx).tmdbKey.isBlank()) "cleared" else "set"))
             }
         }
     }

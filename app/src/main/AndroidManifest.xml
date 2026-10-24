@@ -106,7 +106,6 @@
                 <action android:name="com.espiritu.tv.SCAN" />
                 <action android:name="com.espiritu.tv.DUMP" />
                 <action android:name="com.espiritu.tv.WATCHING" />
-                <action android:name="com.espiritu.tv.TMDB_KEY" />
                 <action android:name="com.espiritu.tv.NEWS_TEST" />
             </intent-filter>
         </receiver>

@@ -26,7 +26,7 @@ import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
-class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions {
+class MainActivity : Activity(), AppGrid.Host, HomeController.Actions {
 
     private lateinit var prefs: Prefs
     private lateinit var home: HomeView
@@ -37,7 +37,6 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
     private var inputs: List<Pair<String, Uri>> = emptyList()
     private val loadGeneration = AtomicInteger()
     private var openSheet: Sheet? = null
-    private var openGrid: AllApps? = null
     private var firstRender = true
 
     private val reloadRunnable = Runnable { reload() }
@@ -69,12 +68,14 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
 
         home = HomeView(this, this)
         setContentView(home)
-        // Home always covers the window, so nothing should be painted underneath it. The window can be see-through
-        // where the trailer's own surface sits behind it.
+        // Home always covers the window, so nothing should be painted underneath it. The window is see-through
+        // where the background art's own surface sits behind it.
         window.setBackgroundDrawable(null)
         window.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
-        // The dock frame and its three system tiles show on the first frame; apps fill in as soon as they're read.
-        home.dock.setApps(emptyList(), null)
+        // The loading screen covers Home until the first art is on screen (cold start only).
+        home.showSplash()
+        // The Inputs and Settings cards show on the first frame; apps fill in as soon as they're read.
+        home.grid.setApps(emptyList(), emptyList())
         home.avatar.setName(prefs.profile)
         home.avatar.setOnClickListener { showSettings() }
         home.update.setOnClickListener { Updater.available?.let { showUpdate(it) } }
@@ -142,22 +143,40 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
     }
 
     /** Hold OK on the Continue-watching banner: name what an app that sends no title is playing. */
+    /** Hold OK on the Continue-watching banner: the show's name and episode, for an app that doesn't say (Hulu). */
     private fun askWatching(pkg: String) {
         val label = apps.firstOrNull { it.pkg == pkg }?.label ?: Brands.provider(pkg)?.name ?: "this app"
+        val current = History.all().lastOrNull { it.pkg == pkg }
         val input = EditText(this).apply {
             setText(prefs.watching(pkg).orEmpty())
             hint = "Show name"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
             setSingleLine()
         }
+        val episode = EditText(this).apply {
+            if (current != null && current.episode > 0) setText("S${current.season}E${current.episode}")
+            hint = "Season and episode, like S3E7"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+            setSingleLine()
+        }
+        val form = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(px(40), px(10), px(40), 0)
+            addView(input)
+            addView(episode)
+        }
         AlertDialog.Builder(this)
             .setTitle("What are you watching on $label?")
-            .setView(input)
+            .setMessage("After this, the TV moves to the next episode by itself whenever one starts.")
+            .setView(form)
             .setPositiveButton("Save") { _, _ ->
                 val name = input.text.toString().trim()
                 val old = prefs.watching(pkg)
                 prefs.setWatching(pkg, name)
                 if (name.isNotEmpty()) History.relabel(this, pkg, name, old)
+                val text = episode.text.toString().trim()
+                val se = History.seasonEpisode(text) ?: Regex("""^\s*(\d{1,2})\D+(\d{1,3})\s*$""").find(text)?.let { it.groupValues[1].toInt() to it.groupValues[2].toInt() }
+                if (se != null) History.setEpisode(this, pkg, se.first, se.second)
                 controller.refresh()
             }
             .setNegativeButton("Cancel", null)
@@ -174,19 +193,18 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
         super.onDestroy()
     }
 
-    /** Pressing Home while already home: close panels and go back to the dock. */
+    /** Pressing Home while already home: close panels and go back to the first card. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         openSheet?.dismiss()
-        openGrid?.dismiss()
-        home.dock.finishMove()
-        home.dock.firstTile?.requestFocus()
+        home.grid.finishMove()
+        home.grid.firstCard?.requestFocus()
     }
 
-    @Deprecated("Back on the home screen returns to the dock.")
+    @Deprecated("Back on the home screen returns to the first card.")
     override fun onBackPressed() {
-        home.dock.finishMove()
-        home.dock.firstTile?.requestFocus()
+        home.grid.finishMove()
+        home.grid.firstCard?.requestFocus()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -238,18 +256,20 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
         if (!prefs.dockInitialized && apps.isNotEmpty()) prefs.dock = AppLoader.defaultDock(apps)
         val byPkg = apps.associateBy { it.pkg }
         val hidden = prefs.hidden
-        val dockApps = prefs.dock.mapNotNull { byPkg[it] }
-        controller.dockApps = dockApps
+        val pinned = prefs.dock.mapNotNull { byPkg[it] }.filter { it.pkg !in hidden }
+        val pinnedPkgs = pinned.mapTo(HashSet()) { it.pkg }
+        controller.pinnedApps = pinned
         controller.allApps = apps.filter { it.pkg !in hidden }
-        home.dock.setApps(dockApps, null)
+        // Pinned apps lead, then everything else alphabetically.
+        home.grid.setApps(pinned, apps.filter { it.pkg !in hidden && it.pkg !in pinnedPkgs })
         if (firstRender) {
             firstRender = false
-            if (openSheet == null && openGrid == null) home.dock.firstTile?.requestFocus()
+            if (openSheet == null) home.grid.firstCard?.requestFocus()
             controller.refresh()
         }
     }
 
-    // ---- Dock ----
+    // ---- Cards ----
 
     override fun openApp(app: AppEntry) {
         val category = if (app.leanback) Intent.CATEGORY_LEANBACK_LAUNCHER else Intent.CATEGORY_LAUNCHER
@@ -286,17 +306,17 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
     }
 
     override fun showAppOptions(app: AppEntry) {
-        val dock = prefs.dock
-        val inDock = app.pkg in dock
-        show(Sheet(this, app.label, if (inDock) "In your dock" else null, app.tile).apply {
-            option(R.drawable.ic_play, "Open") { openGrid?.dismiss(); openApp(app) }
-            if (inDock) {
-                option(R.drawable.ic_star, "Remove from dock") { prefs.dock = prefs.dock - app.pkg; render() }
-                if (dock.size > 1) option(R.drawable.ic_swap, "Move in dock") { openGrid?.dismiss(); startMove(app) }
+        val pinned = prefs.dock
+        val isPinned = app.pkg in pinned
+        show(Sheet(this, app.label, if (isPinned) "Pinned to the front" else null, app.tile).apply {
+            option(R.drawable.ic_play, "Open") { openApp(app) }
+            if (isPinned) {
+                option(R.drawable.ic_star, "Unpin") { prefs.dock = prefs.dock - app.pkg; render() }
+                if (pinned.size > 1) option(R.drawable.ic_swap, "Move") { startMove(app) }
             } else {
-                option(R.drawable.ic_star_outline, "Add to dock") { prefs.dock = prefs.dock + app.pkg; render() }
+                option(R.drawable.ic_star_outline, "Pin to the front") { prefs.dock = prefs.dock + app.pkg; render() }
             }
-            option(R.drawable.ic_hide, "Hide from All apps") {
+            option(R.drawable.ic_hide, "Hide from Home") {
                 prefs.hidden = prefs.hidden + app.pkg
                 prefs.dock = prefs.dock - app.pkg
                 render()
@@ -313,23 +333,16 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
     }
 
     private fun startMove(app: AppEntry) {
-        if (home.dock.startMove(app.pkg)) toast("Use ◀ ▶ to move, then press OK")
+        if (home.grid.startMove(app.pkg)) toast("Use ◀ ▶ to move, then press OK")
     }
 
-    override fun dockReordered(pkgs: List<String>) {
+    override fun appsReordered(pkgs: List<String>) {
         prefs.dock = pkgs
     }
 
-    override fun dockFocused(app: AppEntry?) = controller.dockFocused(app)
+    override fun appFocused(app: AppEntry?) = controller.appFocused(app)
 
-    override fun showAllApps() {
-        openSheet?.dismiss()
-        openGrid?.dismiss()
-        val grid = AllApps(this, apps.filter { it.pkg !in prefs.hidden }, this)
-        openGrid = grid
-        grid.setOnDismiss { if (openGrid === grid) openGrid = null }
-        grid.show()
-    }
+    override fun rowFocused(row: Int) = home.scrollToRow(row)
 
     override fun showInputs() {
         show(Sheet(this, "Inputs", "Switch to a connected device").apply {
@@ -349,14 +362,10 @@ class MainActivity : Activity(), Dock.Host, AllApps.Host, HomeController.Actions
             section("You")
             option(R.drawable.ic_visibility, "Name: ${prefs.profile}") { askName() }
             section("Home")
-            option(R.drawable.ic_play, if (prefs.trailers) "Trailers behind Home: on" else "Trailers behind Home: off") {
-                prefs.trailers = !prefs.trailers
-                controller.trailersChanged()
-                toast(if (prefs.trailers) "Trailers on" else "Trailers off")
-            }
-            if (prefs.trailers) option(R.drawable.ic_play, if (prefs.trailerSound) "Trailer sound: on" else "Trailer sound: off") {
-                prefs.trailerSound = !prefs.trailerSound
-                toast(if (prefs.trailerSound) "Trailer sound on (from the next trailer)" else "Trailer sound off (from the next trailer)")
+            option(R.drawable.ic_play, if (prefs.motion) "Background motion: on" else "Background motion: off") {
+                prefs.motion = !prefs.motion
+                controller.motionChanged()
+                toast(if (prefs.motion) "Background motion on" else "Background motion off")
             }
             val overlayOk = Settings.canDrawOverlays(this@MainActivity)
             option(R.drawable.ic_info, when {

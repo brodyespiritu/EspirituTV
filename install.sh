@@ -4,11 +4,10 @@
 #   ./install.sh 192.168.1.50 --make-home  also make EspirituTV the Home screen
 #   ./install.sh 192.168.1.50 --demo       add sample watch history (see the banner and Continue watching)
 #   ./install.sh 192.168.1.50 --history    print what the TV has recorded being watched
-#   ./install.sh 192.168.1.50 --tmdb-key KEY   turn on trailers behind Home (free key from themoviedb.org/settings/api)
 #   ./install.sh 192.168.1.50 --restore    put the stock TCL/Google launcher back
 set -e
 IP="$1"; MODE="$2"; ARG="$3"
-[ -z "$IP" ] && { echo "Usage: $0 <TV-IP-address> [--make-home|--demo|--history|--watching PKG \"Show\"|--tmdb-key KEY|--news-test|--restore]"; exit 1; }
+[ -z "$IP" ] && { echo "Usage: $0 <TV-IP-address> [--make-home|--demo|--history|--watching PKG \"Show\"|--news-test|--restore]"; exit 1; }
 PKG=com.espiritu.tv
 # Stock home screens: Google TV launcher, its setup helper (re-enables it), classic Android TV launcher.
 STOCK="com.google.android.apps.tv.launcherx com.google.android.tungsten.setupwraith com.google.android.tvlauncher"
@@ -49,23 +48,14 @@ if [ "$MODE" = "--history" ]; then
   exit 0
 fi
 
-# Some TV apps (Hulu's) tell the system they're playing but not what. Name it: ./install.sh <ip> --watching com.hulu.livingroomplus "The Mentalist"
+# Some TV apps (Hulu's) tell the system they're playing but not what. Name it (and the episode, once; the TV counts on from there):
+#   ./install.sh <ip> --watching com.hulu.livingroomplus "The Mentalist" S3E7
 if [ "$MODE" = "--watching" ]; then
   [ -n "$ARG" ] || { echo "Usage: $0 $IP --watching <app-package> \"<show name>\""; exit 1; }
   # The TV's shell splits the command again, so the name travels inside its own quotes.
-  TV shell am broadcast -a com.espiritu.tv.WATCHING -n "$PKG/.DevReceiver" --es pkg "$ARG" --es name "\"$4\"" >/dev/null
-  echo "Noted: $ARG is playing ${4:-(cleared)}."
-  exit 0
-fi
-
-if [ "$MODE" = "--tmdb-key" ]; then
-  if [ -n "$ARG" ]; then
-    TV shell am broadcast -a com.espiritu.tv.TMDB_KEY -n "$PKG/.DevReceiver" --es key "$ARG" >/dev/null
-    echo "TMDB key set: trailers for shows beyond the built-in list too. Turn trailers off in Settings."
-  else
-    TV shell am broadcast -a com.espiritu.tv.TMDB_KEY -n "$PKG/.DevReceiver" --esn key >/dev/null
-    echo "TMDB key cleared (built-in trailers still play)."
-  fi
+  if [ -n "$5" ]; then EP="--es episode $5"; else EP=""; fi
+  TV shell am broadcast -a com.espiritu.tv.WATCHING -n "$PKG/.DevReceiver" --es pkg "$ARG" --es name "\"$4\"" $EP >/dev/null
+  echo "Noted: $ARG is playing ${4:-(cleared)}${5:+, $5}."
   exit 0
 fi
 

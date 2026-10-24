@@ -25,6 +25,9 @@ class Play(
     var last: Long,
     var position: Long,
     var duration: Long,
+    /** Season and episode when known (from the app's own text, or set by the user); 0 = unknown. */
+    var season: Int = 0,
+    var episode: Int = 0,
 ) {
     val showGuess: String get() = guesses.firstOrNull() ?: title
 }
@@ -69,6 +72,12 @@ object History {
                 .mapNotNull { m.getString(it)?.trim()?.ifEmpty { null } }
         }.orEmpty() + listOfNotNull(mdTitle)).distinct()
         val duration = md?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+        // "S4:E7", "S4 E7", "Season 4, Episode 7", "4x07" anywhere in the app's own text.
+        val se = md?.let { m ->
+            listOf(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION, MediaMetadata.METADATA_KEY_TITLE,
+                MediaMetadata.METADATA_KEY_DISPLAY_TITLE, MediaMetadata.METADATA_KEY_ALBUM, MediaMetadata.METADATA_KEY_ARTIST)
+                .firstNotNullOfOrNull { k -> m.getString(k)?.let(::seasonEpisode) }
+        }
         val state = st?.state ?: PlaybackState.STATE_NONE
         val playing = state == PlaybackState.STATE_PLAYING
         var pos = st?.position ?: -1L
@@ -84,6 +93,9 @@ object History {
                 Play(pkg, title, guesses, now, now, 0, 0).also { plays += it } else return
             if (named != null && p.guesses.firstOrNull() != named) p.guesses = (listOf(named) + p.guesses).distinct()
             if (p.title.isBlank() && named != null) p.title = named
+            if (se != null) { p.season = se.first; p.episode = se.second }
+            // No episode text (Hulu): playback starting over from the top of the same session is the next episode.
+            else if (p.episode > 0 && playing && pos in 0 until 90_000 && p.position >= 5 * 60_000) p.episode++
             p.last = now
             if (pos >= 0) p.position = pos
             if (duration > 0) p.duration = duration
@@ -105,6 +117,33 @@ object History {
             version++
             save(force = true)
         }
+    }
+
+    /** The user said which episode [pkg] is on (for apps that don't say): applies to its newest entry. */
+    fun setEpisode(ctx: Context, pkg: String, season: Int, episode: Int) {
+        init(ctx)
+        synchronized(this) {
+            val p = plays.lastOrNull { it.pkg == pkg } ?: return
+            p.season = season
+            p.episode = episode
+            version++
+            save(force = true)
+        }
+    }
+
+    /** Season and episode from text like "S4:E7", "S4 E7", "Season 4, Episode 7" or "4x07". */
+    fun seasonEpisode(text: String): Pair<Int, Int>? {
+        val pats = listOf(
+            Regex("""\bS(\d{1,2})\s*[:.,]?\s*E(\d{1,3})\b""", RegexOption.IGNORE_CASE),
+            Regex("""\bSeason\s*(\d{1,2})\s*[,:.\-–·]?\s*Episode\s*(\d{1,3})\b""", RegexOption.IGNORE_CASE),
+            Regex("""\b(\d{1,2})x(\d{2,3})\b"""),
+        )
+        for (r in pats) {
+            val m = r.find(text) ?: continue
+            val s = m.groupValues[1].toInt(); val e = m.groupValues[2].toInt()
+            if (s in 1..60 && e in 1..400) return s to e
+        }
+        return null
     }
 
     /** The newest title left part-way through in the last four days (with no duration known: at least five minutes in). */
@@ -197,6 +236,7 @@ object History {
         for (p in plays) arr.put(JSONObject().apply {
             put("pkg", p.pkg); put("t", p.title); put("g", JSONArray(p.guesses))
             put("f", p.first); put("l", p.last); put("p", p.position); put("d", p.duration)
+            if (p.episode > 0) { put("s", p.season); put("e", p.episode) }
         })
         try {
             val tmp = File(f.path + ".tmp")
@@ -214,7 +254,7 @@ object History {
                 val g = o.optJSONArray("g")
                 plays += Play(o.getString("pkg"), o.getString("t"),
                     g?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty(),
-                    o.getLong("f"), o.getLong("l"), o.optLong("p"), o.optLong("d"))
+                    o.getLong("f"), o.getLong("l"), o.optLong("p"), o.optLong("d"), o.optInt("s"), o.optInt("e"))
             }
         } catch (t: Throwable) {}
     }

@@ -34,6 +34,39 @@ object Catalog {
         if (name.isBlank()) null
         else parse(Net.get("$API/singlesearch/shows?embed=images&q=" + URLEncoder.encode(name, "UTF-8"), 14 * DAY))
 
+    class Episode(val season: Int, val number: Int, val name: String)
+
+    /** Every episode of a show, in order (cached for three days). */
+    fun episodes(showId: Int): List<Episode> = try {
+        val arr = org.json.JSONArray(String(Net.get("$API/shows/$showId/episodes", 3 * DAY) ?: return emptyList()))
+        (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.let { o -> if (o.optInt("season") > 0 && o.optInt("number") > 0) Episode(o.optInt("season"), o.optInt("number"), o.optString("name")) else null }
+        }
+    } catch (t: Throwable) {
+        emptyList()
+    }
+
+    /**
+     * Which episode [play] is on: its season/episode (rolled into the next season when counting ran past the end),
+     * or, when the app only gave the episode's name, that name looked up in the show's episode list.
+     */
+    fun episodeOf(show: Show?, play: Play): Episode? {
+        val list = show?.let { episodes(it.id) }.orEmpty()
+        if (play.episode > 0) {
+            var s = play.season.coerceAtLeast(1)
+            var e = play.episode
+            while (true) {
+                val count = list.count { it.season == s }
+                if (count == 0 || e <= count) break
+                e -= count; s++
+            }
+            return Episode(s, e, list.firstOrNull { it.season == s && it.number == e }?.name.orEmpty())
+        }
+        if (show == null || play.title.isBlank() || norm(play.title) == norm(show.name)) return null
+        val t = norm(play.title.substringAfterLast(": "))
+        return list.firstOrNull { norm(it.name) == t || norm(it.name) == norm(play.title) }
+    }
+
     /** Finds the show a media session was playing, trying the likeliest metadata fields first. */
     fun resolve(guesses: List<String>): Show? {
         for (g in guesses.map(::clean).filter { it.length >= 2 }.distinct()) {

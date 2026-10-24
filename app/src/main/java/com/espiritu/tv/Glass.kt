@@ -2,7 +2,6 @@ package com.espiritu.tv
 
 import android.graphics.Bitmap
 import android.graphics.BitmapShader
-import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.ColorFilter
 import android.graphics.ColorMatrix
@@ -13,6 +12,8 @@ import android.graphics.Outline
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PixelFormat
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
@@ -49,6 +50,51 @@ object Squircle {
 }
 
 /**
+ * Apple's continuous-corner rounded rectangle, the shape of a tvOS app icon: each corner eases out of the straight
+ * edge over 1.53 × the radius instead of meeting a circle abruptly. Only ever drawn into bitmaps (card art, the
+ * focus ring and glow), never live, since paths are slow on the TV's GPU.
+ */
+object Continuous {
+    private const val EDGE = 1.52866471f
+    // One corner, from the top edge round to the right edge, in radii measured in from that corner (dx, dy).
+    private val corner = arrayOf(
+        floatArrayOf(1.08849323f, 0f, 0.86840689f, 0f, 0.66993427f, 0.06549600f),
+        floatArrayOf(0.63149399f, 0.07491100f),
+        floatArrayOf(0.37282392f, 0.16905899f, 0.16906013f, 0.37282401f, 0.07491176f, 0.63149399f),
+        floatArrayOf(0.06549600f, 0.66993427f),
+        floatArrayOf(0f, 0.86840689f, 0f, 1.08849323f, 0f, EDGE),
+    )
+
+    fun path(rect: RectF, radius: Float, out: Path = Path()): Path {
+        out.reset()
+        val k = minOf(radius, minOf(rect.width(), rect.height()) / 2f / EDGE)
+        // The same corner turned to each of the four, clockwise from the top right.
+        fun x(c: Int, dx: Float, dy: Float) = when (c) { 0 -> rect.right - dx * k; 1 -> rect.right - dy * k; 2 -> rect.left + dx * k; else -> rect.left + dy * k }
+        fun y(c: Int, dx: Float, dy: Float) = when (c) { 0 -> rect.top + dy * k; 1 -> rect.bottom - dx * k; 2 -> rect.bottom - dy * k; else -> rect.top + dx * k }
+        for (c in 0..3) {
+            if (c == 0) out.moveTo(x(c, EDGE, 0f), y(c, EDGE, 0f)) else out.lineTo(x(c, EDGE, 0f), y(c, EDGE, 0f))
+            for (s in corner) {
+                if (s.size == 2) out.lineTo(x(c, s[0], s[1]), y(c, s[0], s[1]))
+                else out.cubicTo(x(c, s[0], s[1]), y(c, s[0], s[1]), x(c, s[2], s[3]), y(c, s[2], s[3]), x(c, s[4], s[5]), y(c, s[4], s[5]))
+            }
+        }
+        out.close()
+        return out
+    }
+
+    /** [src] cut to the shape, corners transparent. */
+    fun clip(src: Bitmap, radius: Float): Bitmap {
+        val out = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
+        val c = Canvas(out)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        c.drawPath(path(RectF(0f, 0f, src.width.toFloat(), src.height.toFloat()), radius), p)
+        p.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+        c.drawBitmap(src, 0f, 0f, p)
+        return out
+    }
+}
+
+/**
  * Everything behind the UI is prepared off the main thread into ready-to-draw bitmaps, so a frame on Home
  * is one full-screen bitmap plus the small glass surfaces, no matter how weak the TV's GPU is:
  * - [compose] bakes the show art (or the plain scene) and the three canvas scrims into one screen-sized bitmap;
@@ -56,24 +102,14 @@ object Squircle {
  */
 object Backdrop {
     var blurred: Bitmap? = null; private set
-    /** 0 = glass frosts the still; 1 = a trailer plays underneath and the glass is smoked, letting the video through. */
-    var videoMix = 0f; private set
     private val surfaces = ArrayList<WeakReference<View>>()
     private var empty: Bitmap? = null
-    private var scrims: Bitmap? = null
 
     fun register(v: View) { surfaces += WeakReference(v) }
 
     /** Main thread: switches every glass surface to [blurredArt] (from [blurOf]). */
     fun apply(blurredArt: Bitmap?) {
         blurred = blurredArt
-        invalidateAll()
-    }
-
-    /** Main thread: moves every glass surface between frosted-still (0) and see-through-to-video (1). */
-    fun setVideoMix(v: Float) {
-        if (v == videoMix) return
-        videoMix = v
         invalidateAll()
     }
 
@@ -84,10 +120,6 @@ object Backdrop {
 
     /** The scene with no art, composed once and kept. */
     fun emptyArt(): Bitmap = empty ?: compose(null).also { empty = it }
-
-    /** Just the three scrims on a clear background, for laying over a playing trailer. Composed once. */
-    fun scrimsOnly(): Bitmap = scrims ?: Bitmap.createBitmap(D.screenW, D.screenH, Bitmap.Config.ARGB_8888)
-        .also { drawScrims(Canvas(it)); scrims = it }
 
     /**
      * A screen-sized frame: [art] center-cropped (or the scene gradient), then the canvas scrims:
@@ -208,8 +240,6 @@ class Glass(
     private val art = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val sheen = Paint(Paint.ANTI_ALIAS_FLAG)
     private val fallback = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xE6202028.toInt() }
-    /** Over a playing trailer: dark enough for white text, clear enough for the video to play through. */
-    private val smoke = Paint(Paint.ANTI_ALIAS_FLAG)
     private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = pxf(1.5f)
@@ -231,29 +261,19 @@ class Glass(
         val clip = bottomOnly
         if (clip) { canvas.save(); canvas.clipRect(rect) }
         val bmp = if (plain) null else Backdrop.blurred
-        // While a trailer plays, the frosted still fades out of the glass and smoke fades in: the video shows through.
-        val mix = if (plain) 0f else Backdrop.videoMix
-        if (mix < 1f) {
-            if (bmp != null) {
-                if (shaderFor !== bmp) {
-                    art.shader = BitmapShader(bmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-                    shaderFor = bmp
-                }
-                host.getLocationInWindow(loc)
-                matrix.setScale(D.screenW.toFloat() / bmp.width, D.screenH.toFloat() / bmp.height)
-                // Undo the host's own scale/translation animations so the glass stays pinned to the art behind it.
-                matrix.postTranslate(-loc[0].toFloat(), -loc[1].toFloat())
-                art.shader.setLocalMatrix(matrix)
-                art.alpha = ((1f - mix) * 255).toInt()
-                canvas.drawRoundRect(shape, r, r, art)
-            } else {
-                fallback.alpha = ((1f - mix) * 0xE6).toInt()
-                canvas.drawRoundRect(shape, r, r, fallback)
+        if (bmp != null) {
+            if (shaderFor !== bmp) {
+                art.shader = BitmapShader(bmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+                shaderFor = bmp
             }
-        }
-        if (mix > 0f) {
-            smoke.color = 0x101018 or ((mix * 0x70).toInt() shl 24)
-            canvas.drawRoundRect(shape, r, r, smoke)
+            host.getLocationInWindow(loc)
+            matrix.setScale(D.screenW.toFloat() / bmp.width, D.screenH.toFloat() / bmp.height)
+            // Undo the host's own scale/translation animations so the glass stays pinned to the art behind it.
+            matrix.postTranslate(-loc[0].toFloat(), -loc[1].toFloat())
+            art.shader.setLocalMatrix(matrix)
+            canvas.drawRoundRect(shape, r, r, art)
+        } else {
+            canvas.drawRoundRect(shape, r, r, fallback)
         }
         canvas.drawRoundRect(shape, r, r, sheen)
         canvas.drawRoundRect(shape, r, r, edge)
@@ -282,38 +302,3 @@ fun pill(color: Int, radius: Float, stroke: Int = 0) = GradientDrawable().apply 
 fun sceneBackground() = GradientDrawable(
     GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFF1E1A3E.toInt(), 0xFF15142D.toInt(), 0xFF0D0D1B.toInt())
 )
-
-/**
- * Focus art for the dock, rendered once and drawn as plain bitmaps (real-time shadows are tessellated per frame
- * on this class of GPU): a soft dark shadow with a faint white glow, and a white ring that follows the tile's shape.
- */
-object Halo {
-    /** A square bitmap [size] wide: shadow below and glow around a squircle [tile] wide, centred. */
-    fun glow(size: Int, tile: Int): Bitmap {
-        val b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val c = Canvas(b)
-        val path = Squircle.path(tile.toFloat(), tile.toFloat())
-        val inset = (size - tile) / 2f
-        c.save()
-        c.translate(inset, inset + tile * 0.22f)
-        c.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = C.shade(0.7f); maskFilter = BlurMaskFilter(tile * 0.32f, BlurMaskFilter.Blur.NORMAL) })
-        c.restore()
-        c.save()
-        c.translate(inset, inset)
-        c.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = C.white(0.5f); maskFilter = BlurMaskFilter(tile * 0.26f, BlurMaskFilter.Blur.OUTER) })
-        c.restore()
-        return b
-    }
-
-    /** A [size]-wide squircle ring, [stroke] px thick, just inside the edge. */
-    fun ring(size: Int, stroke: Float): Bitmap {
-        val b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val c = Canvas(b)
-        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = stroke; color = C.white(0.95f) }
-        c.save()
-        c.translate(stroke / 2, stroke / 2)
-        c.drawPath(Squircle.path(size - stroke, size - stroke), p)
-        c.restore()
-        return b
-    }
-}

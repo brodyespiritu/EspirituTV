@@ -17,12 +17,14 @@ import android.widget.TextView
 class HeroView(ctx: Context) : LinearLayout(ctx) {
     private val mark = ImageView(ctx)
     private val source = ctx.label(24, Fonts.medium, C.white(0.85f))
-    private val chip: TextView = ctx.glassChip("Top 10 today", 40, 18, 16)
+    private val chip: TextView = ctx.glassChip("New series", 40, 18, 16)
     private val title = ctx.label(88, Fonts.bold).apply {
         letterSpacing = -0.03f
         maxLines = 2
         setLineSpacing(0f, 0.98f)
     }
+    /** The show's own title logo (as on the canvas), fitted into 620 × 180 from the bottom-left; the text title is the fallback. */
+    private val logo = ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_XY; visibility = View.GONE }
     private val episodeRow = LinearLayout(ctx).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
     private val episode = ctx.label(26, Fonts.regular, C.white(0.85f)).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
     private val track = FrameLayout(ctx)
@@ -31,7 +33,7 @@ class HeroView(ctx: Context) : LinearLayout(ctx) {
     private val meta = ctx.label(26, Fonts.medium, C.white(0.85f))
     private val blurb = ctx.label(24, Fonts.regular, C.white(0.7f)).apply {
         setLineSpacing(0f, 1.4f)
-        maxLines = 3
+        maxLines = 2
         ellipsize = android.text.TextUtils.TruncateAt.END
         maxWidth = px(760)
     }
@@ -53,6 +55,7 @@ class HeroView(ctx: Context) : LinearLayout(ctx) {
         addView(top)
 
         addView(title, LayoutParams(MATCH, WRAP).apply { topMargin = px(26) })
+        addView(logo, LayoutParams(px(620), px(180)).apply { topMargin = px(26) })
 
         // A long episode title gives way; the bar and the minutes keep their size.
         episodeRow.addView(episode, LayoutParams(0, WRAP, 1f).apply { marginEnd = px(22) })
@@ -90,10 +93,29 @@ class HeroView(ctx: Context) : LinearLayout(ctx) {
         source.text = text
     }
 
+    /** The title: the show's logo fitted inside 620 × 180 (as on the canvas), or the name in type. */
+    private fun setTitle(name: String, logoArt: Bitmap?, hideText: Boolean = false) {
+        if (logoArt != null && logoArt.width > 0 && logoArt.height > 0) {
+            val k = minOf(pxf(620) / logoArt.width, pxf(180) / logoArt.height)
+            logo.layoutParams = (logo.layoutParams as LayoutParams).apply {
+                width = (logoArt.width * k).toInt(); height = (logoArt.height * k).toInt()
+            }
+            logo.setImageBitmap(logoArt)
+            logo.contentDescription = name
+            logo.visibility = View.VISIBLE
+            title.gone(true)
+        } else {
+            logo.setImageDrawable(null)
+            logo.visibility = View.GONE
+            title.text = name
+            title.gone(hideText)
+        }
+    }
+
     fun showContinue(brand: Brand?, tile: Bitmap?, show: Show?, play: Play) {
         setSource(brand, tile, "Continue watching")
         chip.gone(true)
-        title.text = show?.name ?: play.showGuess
+        setTitle(show?.name ?: play.showGuess, null)
         val ep = if (show != null && !show.name.equals(play.title, ignoreCase = true)) play.title else ""
         episode.text = ep
         episode.gone(ep.isEmpty())
@@ -111,11 +133,12 @@ class HeroView(ctx: Context) : LinearLayout(ctx) {
         visibility = View.VISIBLE
     }
 
-    fun showPopular(brand: Brand?, tile: Bitmap?, providerName: String, show: Show, inUpNext: Boolean) {
-        setSource(brand, tile, "Popular on $providerName")
-        chip.gone(false)
-        title.text = show.name
-        title.gone(show.titleInArt)
+    /** A show from the service's lineup: brand-new series say so ("New on …" and a chip), the rest are "Popular on …". */
+    fun showPopular(brand: Brand?, tile: Bitmap?, providerName: String, show: Show, logoArt: Bitmap?, isNew: Boolean, inUpNext: Boolean) {
+        setSource(brand, tile, if (isNew) "New on $providerName" else "Popular on $providerName")
+        chip.text = "New series"
+        chip.gone(!isNew)
+        setTitle(show.name, logoArt, hideText = show.titleInArt)
         episodeRow.gone(true)
         val bits = ArrayList<String>()
         bits += show.genres.take(2)

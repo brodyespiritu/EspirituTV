@@ -6,11 +6,13 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
+import android.graphics.RectF
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
@@ -22,9 +24,9 @@ class AppEntry(
     val pkg: String,
     val component: ComponentName,
     val label: String,
-    /** Squircle dock tile, drawn at its magnified size so it stays sharp at 1.4×. */
+    /** Squircle icon (options panel header, the hero's source mark for apps without a brand mark). */
     val tile: Bitmap?,
-    /** 16:9 card for All apps: the app's TV banner, or its icon on a colour pulled from it. */
+    /** The Home card (5:3): brand colour + logo for known apps, else the app's TV banner, else its icon on its colour. */
     val card: Bitmap?,
     val leanback: Boolean,
     val system: Boolean,
@@ -32,9 +34,11 @@ class AppEntry(
 
 object AppLoader {
     private const val DEFAULT_ACCENT = 0xFF2A3145.toInt()
-    const val TILE = 96            // dock icon, canvas px
-    const val CARD_W = 296         // All apps card, canvas px
-    const val CARD_H = 166
+    const val TILE = 96            // icon, canvas px
+    const val CARD_W = 296         // Home card, canvas px: five to a row across 1680 with 50 px gaps,
+    const val CARD_H = 178         // in tvOS's 5:3 icon shape
+    /** Corner radius of a card, canvas px (Apple's continuous corner, as on tvOS icons). */
+    const val CARD_RADIUS = 38f
 
     fun defaultDock(apps: List<AppEntry>): List<String> {
         val have = apps.mapTo(HashSet()) { it.pkg }
@@ -48,7 +52,7 @@ object AppLoader {
     private val memCache = HashMap<String, Art>()
 
     /**
-     * Loads every launchable app and pre-renders its art once, so the dock and grid never decode while moving.
+     * Loads every launchable app and pre-renders its art once, so the cards never decode while moving.
      * [isStale] lets a newer reload cancel this one early.
      */
     fun load(ctx: Context, isStale: () -> Boolean = { false }): List<AppEntry>? {
@@ -78,7 +82,7 @@ object AppLoader {
                         val icon = safe { ri.loadIcon(pm) }
                         val banner = safe { pm.getActivityBanner(cn) } ?: safe { pm.getApplicationBanner(ai.applicationInfo) }
                         val accent = icon?.let { render(it, 48, 48) }?.let(::accentOf) ?: DEFAULT_ACCENT
-                        Art(version, tile(ctx, ai.packageName, icon, accent, tilePx), card(banner, icon, accent, cardW, cardH))
+                        Art(version, tile(ctx, ai.packageName, icon, accent, tilePx), card(ctx, ai.packageName, banner, icon, accent, cardW, cardH))
                             .also { writeDisk(diskDir, key, it) }
                     }
                 memCache[key] = art
@@ -142,21 +146,101 @@ object AppLoader {
         return out
     }
 
-    private fun card(banner: Drawable?, icon: Drawable?, accent: Int, w: Int, h: Int): Bitmap? = safe {
-        if (banner != null) return@safe render(banner, w, h)
+    /** The card art, already cut to the card's rounded shape so Home never has to clip it. */
+    private fun card(ctx: Context, pkg: String, banner: Drawable?, icon: Drawable?, accent: Int, w: Int, h: Int): Bitmap? =
+        cardArt(ctx, pkg, banner, icon, accent, w, h)?.let { b -> safe { Continuous.clip(b, w * CARD_RADIUS / CARD_W) }.also { b.recycle() } }
+
+    /**
+     * A card that reads as one horizontal app icon, as on tvOS, never a small square icon parked on a colour:
+     * 1. the app's own TV banner, its official horizontal logo (Netflix, YouTube, Disney+… all ship one), filling the card;
+     * 2. a known brand without a banner: the brand colour with its logo;
+     * 3. an adaptive icon: its background layer becomes the whole card and its foreground the logo;
+     * 4. a filled square icon: the card takes the colour of the icon's edge and the icon's rim fades into it,
+ *    so only the logo stands out;
+ * 5. anything else (a round badge, a bare glyph): the logo on a deep tone of its own colour.
+     */
+    private fun cardArt(ctx: Context, pkg: String, banner: Drawable?, icon: Drawable?, accent: Int, w: Int, h: Int): Bitmap? = safe {
         val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
+        val brand = Brands.of(pkg)
+        if (banner != null) {
+            // TV banners are 16:9 and the card is a little taller: fill the height and trim the sides (a few %).
+            c.drawColor(brand?.bg ?: accent)
+            val bw = maxOf(w, h * 16 / 9)
+            val bh = bw * 9 / 16
+            banner.setBounds((w - bw) / 2, (h - bh) / 2, (w + bw) / 2, (h + bh) / 2)
+            banner.draw(c)
+            return@safe b
+        }
+        val mark = brand?.let { safe { ctx.getDrawable(it.mark) } }
+        if (brand != null && mark != null) {
+            // The canvas card: brand colour, logo centred (wordmarks by width, symbols by height).
+            c.drawColor(brand.bg)
+            val aspect = mark.intrinsicWidth.toFloat() / mark.intrinsicHeight.coerceAtLeast(1)
+            val mw: Float; val mh: Float
+            if (brand.wordmark) { mw = w * (if (aspect > 1.1f) 0.5f else 0.56f); mh = mw / aspect }
+            else { mh = h * 0.5f; mw = mh * aspect }
+            mark.setBounds(((w - mw) / 2).toInt(), ((h - mh) / 2).toInt(), ((w + mw) / 2).toInt(), ((h + mh) / 2).toInt())
+            mark.draw(c)
+            return@safe b
+        }
+        if (icon != null && Build.VERSION.SDK_INT >= 26 && icon is AdaptiveIconDrawable) {
+            // The background layer (a colour, gradient or pattern) stretched over the card; the foreground's visible
+            // 72 of 108 units about 60% of the card's height.
+            icon.background?.apply { setBounds(0, (h - w) / 2, w, (h + w) / 2); draw(c) }
+            val l = (h * 0.92f).toInt()
+            icon.foreground?.apply { setBounds((w - l) / 2, (h - l) / 2, (w + l) / 2, (h + l) / 2); draw(c) }
+            return@safe b
+        }
+        val full = icon?.let { render(it, 192, 192) }
+        val edge = full?.let(::edgeColor)
+        if (full != null && edge != null) {
+            // The icon's rounded corners, outline and any long shadow melt away in a soft fade near its rim.
+            val n = full.width.toFloat()
+            val soft = Bitmap.createBitmap(full.width, full.height, Bitmap.Config.ARGB_8888)
+            val sc = Canvas(soft)
+            sc.drawRoundRect(RectF(n * 0.07f, n * 0.07f, n * 0.93f, n * 0.93f), n * 0.24f, n * 0.24f,
+                Paint(Paint.ANTI_ALIAS_FLAG).apply { maskFilter = BlurMaskFilter(n * 0.05f, BlurMaskFilter.Blur.NORMAL) })
+            sc.drawBitmap(full, 0f, 0f, Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN) })
+            c.drawColor(edge)
+            val sz = h * 0.84f
+            c.drawBitmap(soft, null, RectF((w - sz) / 2, (h - sz) / 2, (w + sz) / 2, (h + sz) / 2), Paint(Paint.FILTER_BITMAP_FLAG))
+            soft.recycle(); full.recycle()
+            return@safe b
+        }
+        full?.recycle()
         c.drawColor(accent)
         if (icon != null) {
-            val s = (h * 0.5f).toInt()
+            val s = (h * 0.58f).toInt()
             icon.setBounds((w - s) / 2, (h - s) / 2, (w + s) / 2, (h + s) / 2)
             icon.draw(c)
         }
         b
     }
 
+    /**
+     * For a filled square icon, the colour along the inside of its edge (clear of rounded corners); null when it
+     * isn't opaque there (a circle, a bare glyph) or the edge is more than roughly one colour.
+     */
+    private fun edgeColor(icon: Bitmap): Int? {
+        val n = icon.width
+        val inset = n / 12
+        val pts = ArrayList<Int>()
+        for (i in 0 until 9) {
+            val t = n * 3 / 10 + (n * 4 / 10) * i / 8
+            pts += icon.getPixel(t, inset); pts += icon.getPixel(t, n - 1 - inset)
+            pts += icon.getPixel(inset, t); pts += icon.getPixel(n - 1 - inset, t)
+        }
+        if (pts.any { Color.alpha(it) < 235 }) return null
+        val r = pts.sumOf { Color.red(it) } / pts.size
+        val g = pts.sumOf { Color.green(it) } / pts.size
+        val bl = pts.sumOf { Color.blue(it) } / pts.size
+        val spread = pts.maxOf { maxOf(kotlin.math.abs(Color.red(it) - r), kotlin.math.abs(Color.green(it) - g), kotlin.math.abs(Color.blue(it) - bl)) }
+        return if (spread <= 48) Color.rgb(r, g, bl) else null
+    }
+
     private fun artKey(pkg: String, cls: String, size: Int) =
-        "$pkg-$cls-$size".replace(Regex("[^A-Za-z0-9._-]"), "_")
+        "v7-$pkg-$cls-$size-$CARD_W".replace(Regex("[^A-Za-z0-9._-]"), "_")
 
     private fun diskFile(dir: File, key: String, version: Long, kind: String) = File(dir, "$key~$version~$kind.png")
 
