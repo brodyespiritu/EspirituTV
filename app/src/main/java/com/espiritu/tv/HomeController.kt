@@ -4,14 +4,17 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Handler
 import android.os.SystemClock
+import android.view.KeyEvent
 import android.view.View
 import java.util.concurrent.ExecutorService
 
 /**
  * Decides what fills the Home screen and loads it off the main thread.
  * - Banner: the show left part-way (Continue watching) wins; otherwise the weekly show; otherwise nothing.
- * - Background: the lineup of the app card in focus (mostly brand-new series, never Horror), each show's
- *   text-free backdrop drifting slowly closer, a new one every [ROTATE_MS], in a fresh order on every Home visit.
+ * - Hero and background: a slideshow of its own, untouched by which app card has focus. It takes turns between
+ *   your streaming services (mostly brand-new series, never Horror, Up Next picks first), each show's text-free
+ *   backdrop drifting slowly closer, a new one every [ROTATE_MS], in a fresh order on every Home visit.
+ *   Right past the hero's last button goes to the next show, left past its first to the one before.
  */
 class HomeController(
     private val ctx: Context,
@@ -34,36 +37,47 @@ class HomeController(
     /** The app behind the Continue-watching banner, if any (for naming what it plays). */
     var continuePkg: String? = null; private set
 
+    /** One show in the slideshow, and the app it's on. */
+    private class Slide(val pkg: String, val showId: Int)
+
     private var gen = 0
     private var popGen = 0
-    private var popularPkg: String? = null
-    private var popularIndex = 0
-    private var popularCount = 0
+    private var slides: List<Slide> = emptyList()
+    /** The streaming apps [slides] was made from; a change (an app installed or removed) remakes it. */
+    private var slidesFrom: List<String>? = null
+    private var slideIndex = 0
     private var currentShow: Show? = null
-    private var pendingPkg: String? = null
     private var lastInput = SystemClock.uptimeMillis()
     /** New on every Home visit: the rotation's order. */
     private var visitSeed = 0L
 
     private val rotate = object : Runnable {
         override fun run() {
-            val pkg = popularPkg
-            if (!idle() && pkg != null && popularCount > 1) loadPopular(pkg, popularIndex + 1)
+            if (!idle() && slides.size > 1) loadSlide(slideIndex + 1, 1)
             main.postDelayed(this, ROTATE_MS)
         }
     }
 
-    private val switchProvider = Runnable {
-        val pkg = pendingPkg ?: return@Runnable
-        if (pkg == popularPkg) return@Runnable
-        popularPkg = pkg
-        loadPopular(pkg, 0)
+    init {
+        // Stepping through the slideshow by hand, as on Apple TV's top shelf.
+        view.hero.secondary.setOnKeyListener { _, key, ev -> key == KeyEvent.KEYCODE_DPAD_RIGHT && ev.action == KeyEvent.ACTION_DOWN && step(1) }
+        view.hero.primary.setOnKeyListener { _, key, ev -> key == KeyEvent.KEYCODE_DPAD_LEFT && ev.action == KeyEvent.ACTION_DOWN && step(-1) }
+    }
+
+    /** The next (1) or previous (-1) show, and a full [ROTATE_MS] before the slideshow moves on by itself. */
+    private fun step(dir: Int): Boolean {
+        if (slides.size < 2) return false
+        loadSlide(slideIndex + dir, dir)
+        main.removeCallbacks(rotate)
+        main.postDelayed(rotate, ROTATE_MS)
+        return true
     }
 
     /** Home is back in front: a fresh order of shows, starting over, and the background moving again. */
     fun start() {
         visitSeed = System.nanoTime()
-        popularIndex = 0
+        slidesFrom = null
+        slideIndex = 0
         currentShow = null
         view.back.motion = prefs.motion
         view.back.resume()
@@ -74,7 +88,6 @@ class HomeController(
 
     fun stop() {
         main.removeCallbacks(rotate)
-        main.removeCallbacks(switchProvider)
         view.back.pause()
     }
 
@@ -94,15 +107,6 @@ class HomeController(
 
     /** Settings toggled the background drift. */
     fun motionChanged() { view.back.motion = prefs.motion }
-
-    /** Focus moved onto an app card: after a short pause, the background follows that app. */
-    fun appFocused(app: AppEntry?) {
-        app ?: return
-        if (Brands.provider(app.pkg) == null || app.pkg == popularPkg) return
-        pendingPkg = app.pkg
-        main.removeCallbacks(switchProvider)
-        main.postDelayed(switchProvider, 350)
-    }
 
     /** Re-reads watch history for the banner and the card dot. Safe to call often; stale loads are dropped. */
     fun refresh() {
@@ -127,29 +131,62 @@ class HomeController(
                     else -> view.banner.hide()
                 }
                 view.grid.setRunning(play?.pkg)
-                if (currentShow == null) {
-                    val pkg = popularPkg ?: firstProvider().also { popularPkg = it }
-                    loadPopular(pkg, popularIndex)
+                // The slideshow waits for the app list (it's made from the streaming apps you have).
+                if (allApps.isNotEmpty()) {
+                    val from = streamingApps()
+                    if (from != slidesFrom) {
+                        slidesFrom = from
+                        slides = makeSlides(from)
+                        slideIndex = 0
+                        currentShow = null
+                    }
+                    if (currentShow == null) loadSlide(slideIndex, 1)
                 }
             }
         }
     }
 
-    private fun loadPopular(pkg: String, index: Int) {
-        val provider = Brands.provider(pkg) ?: return
-        // Saved Up Next shows lead; the rest come in an order that changes every visit.
-        val ids = (prefs.upNextIds(pkg) + provider.shows.shuffled(java.util.Random(visitSeed xor pkg.hashCode().toLong()))).distinct()
-        if (ids.isEmpty()) return
+    /**
+     * The slideshow for this visit: each streaming service's shows (Up Next picks first, the rest in an order that
+     * changes every visit), dealt out in turns so it keeps moving between services, starting with a different one
+     * each visit. [MAX_SLIDES] at most, so the dots stay readable.
+     */
+    private fun makeSlides(pkgs: List<String>): List<Slide> {
+        val turns = pkgs.mapNotNull { pkg ->
+            val provider = Brands.provider(pkg) ?: return@mapNotNull null
+            pkg to (prefs.upNextIds(pkg) + provider.shows.shuffled(java.util.Random(visitSeed xor pkg.hashCode().toLong()))).distinct()
+        }
+        if (turns.isEmpty()) return emptyList()
+        val first = ((visitSeed % turns.size).toInt() + turns.size) % turns.size
+        val order = turns.drop(first) + turns.take(first)
+        val out = ArrayList<Slide>()
+        var round = 0
+        while (out.size < MAX_SLIDES) {
+            var dealt = false
+            for ((pkg, ids) in order) {
+                if (round < ids.size && out.size < MAX_SLIDES) { out += Slide(pkg, ids[round]); dealt = true }
+            }
+            if (!dealt) break
+            round++
+        }
+        return out
+    }
+
+    /** Shows slide [index] (wrapping), walking on in [dir] past anything tagged Horror. */
+    private fun loadSlide(index: Int, dir: Int) {
+        val list = slides
+        if (list.isEmpty()) return
         val g = ++popGen
         io.execute {
-            // Walk the list from [index] to the first show that isn't tagged Horror.
-            var i = ((index % ids.size) + ids.size) % ids.size
+            var i = ((index % list.size) + list.size) % list.size
             var show: Show? = null
-            for (attempt in ids.indices) {
-                val s = Catalog.show(ids[i])
+            for (attempt in list.indices) {
+                val s = Catalog.show(list[i].showId)
                 if (s != null && s.genres.none { it.equals("Horror", ignoreCase = true) }) { show = s; break }
-                i = (i + 1) % ids.size
+                i = ((i + dir) % list.size + list.size) % list.size
             }
+            val pkg = list[i].pkg
+            val provider = Brands.provider(pkg)
             val url = show?.let(::artUrl)
             val raw = url?.let { Images.load(it, D.screenW) }
             val creditText = when { raw == null -> null; url!!.contains("image.tmdb.org") -> "Art: TMDB"; else -> "Art: TVmaze" }
@@ -159,13 +196,12 @@ class HomeController(
             val picked = i
             main.post {
                 if (g != popGen) return@post
-                if (show == null || frame == null) {
+                if (show == null || frame == null || provider == null) {
                     // Nothing cached and no network: keep whatever is up, or show the plain scene.
                     if (view.hero.visibility != View.VISIBLE) view.showEmpty()
                     return@post
                 }
-                popularIndex = picked
-                popularCount = ids.size
+                slideIndex = picked
                 currentShow = show
                 val app = app(pkg)
                 view.hero.showPopular(Brands.of(pkg), app?.tile, provider.name, show, logo, show.id in provider.new, prefs.isUpNext(pkg, show))
@@ -176,7 +212,7 @@ class HomeController(
                     view.hero.setUpNext(saved)
                     actions.toast(if (saved) "${show.name} added to Up Next" else "${show.name} removed from Up Next")
                 }
-                view.setDots(ids.size, picked)
+                view.setDots(list.size, picked)
                 view.setArt(frame, creditText)
                 Backdrop.apply(blur)
             }
@@ -188,17 +224,22 @@ class HomeController(
 
     private fun app(pkg: String) = pinnedApps.firstOrNull { it.pkg == pkg } ?: allApps.firstOrNull { it.pkg == pkg }
 
-    /** The first streaming app among the pinned cards, then anywhere; with none installed, HBO Max's picks with a "Get" button. */
-    private fun firstProvider(): String =
-        pinnedApps.firstOrNull { Brands.provider(it.pkg) != null }?.pkg
-            ?: allApps.firstOrNull { Brands.provider(it.pkg) != null }?.pkg
-            ?: Brands.DEFAULT_PROVIDER
+    /**
+     * One app per streaming service you have (pinned cards first; a second Netflix app doesn't count twice).
+     * With none installed, HBO Max's picks with a "Get" button.
+     */
+    private fun streamingApps(): List<String> {
+        val seen = HashSet<Provider>()
+        val out = (pinnedApps + allApps).map { it.pkg }.distinct().filter { pkg -> Brands.provider(pkg)?.let(seen::add) == true }
+        return out.ifEmpty { listOf(Brands.DEFAULT_PROVIDER) }
+    }
 
     /** Uploads the frame to the GPU while still on the worker thread, so the crossfade starts without a hitch. */
     private fun ready(frame: Bitmap): Bitmap = frame.also { it.prepareToDraw() }
 
     private companion object {
         const val ROTATE_MS = 14_000L
+        const val MAX_SLIDES = 10
         const val IDLE_MS = 10 * 60_000L
     }
 }

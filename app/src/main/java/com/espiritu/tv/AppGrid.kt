@@ -28,8 +28,6 @@ class AppGrid(ctx: Context, private val host: Host) : LinearLayout(ctx) {
         fun showAppOptions(app: AppEntry)
         fun showInputs()
         fun showSettings()
-        /** Focus moved onto an app card (null for Inputs / Settings). */
-        fun appFocused(app: AppEntry?)
         /** The pinned apps were reordered (move mode). */
         fun appsReordered(pkgs: List<String>)
         /** Focus moved to row [row] (0 = the row under the hero). */
@@ -161,7 +159,7 @@ class AppGrid(ctx: Context, private val host: Host) : LinearLayout(ctx) {
             view.pivotX = w / 2f
             view.pivotY = h / 2f
             view.setOnFocusChangeListener { _, f ->
-                if (f) { lastFocused = view; host.appFocused(app); val r = index / COLS; if (r != focusedRow) { focusedRow = r; host.rowFocused(r) } }
+                if (f) { lastFocused = view; val r = index / COLS; if (r != focusedRow) { focusedRow = r; host.rowFocused(r) } }
                 art.foreground = if (f) BitmapDrawable(view.resources, ringArt) else null
                 view.animate().scaleX(if (f) 1.1f else 1f).scaleY(if (f) 1.1f else 1f).setDuration(160).setInterpolator(DecelerateInterpolator()).start()
                 halo.animate().alpha(if (f) 1f else 0f).setDuration(160).start()

@@ -158,7 +158,7 @@ class HomeView(ctx: Context, gridHost: AppGrid.Host) : FrameLayout(ctx) {
     private companion object {
         /** The first card row's top edge. */
         const val GRID_TOP = 800
-        /** The hero's bottom edge sits 44 px above the cards. */
+        /** The hero's bottom edge sits 96 px above the cards. */
         const val HERO_BOTTOM = 1080 - GRID_TOP + 96
     }
 }

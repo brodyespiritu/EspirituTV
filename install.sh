@@ -76,8 +76,14 @@ if [ "$MODE" = "--watching" ]; then
   exit 0
 fi
 
+# Updating EspirituTV closes it, and Android then shows whatever app was behind it. If Home was on screen,
+# reopen it afterwards (that also shows the new loading screen); if another app was, leave it be.
+WAS_HOME="$(TV shell "dumpsys activity activities | grep -m1 mResumedActivity" 2>/dev/null | grep -c "$PKG/" || true)"
 TV install -r "$DIR/EspirituTV.apk"
 echo "Installed."
+if [ "$WAS_HOME" = "1" ]; then
+  TV shell am start -a android.intent.action.MAIN -c android.intent.category.HOME >/dev/null 2>&1 || true
+fi
 
 # The CNAW2 news banner draws over whatever is on screen, a playing show included.
 TV shell appops set "$PKG" SYSTEM_ALERT_WINDOW allow >/dev/null 2>&1 && echo "News banners may draw over other apps."

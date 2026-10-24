@@ -340,8 +340,6 @@ class MainActivity : Activity(), AppGrid.Host, HomeController.Actions {
         prefs.dock = pkgs
     }
 
-    override fun appFocused(app: AppEntry?) = controller.appFocused(app)
-
     override fun rowFocused(row: Int) = home.scrollToRow(row)
 
     override fun showInputs() {

@@ -21,10 +21,14 @@ To see the screen with sample history (a show left half-way, and one watched the
 
 ## What's on the screen
 
-- **Loading screen** – while Home starts from cold (after a reboot or an update), a black screen with the
-  EspirituTV wordmark and a band of light sweeping across it from left to right, until the art is ready.
-- **Background** – the lineup of the app card that has focus: mostly series that premiered in the last few
-  months (picked from TVmaze's schedules), plus one established hit, nothing tagged Horror. Each show appears with
+- **Loading screen** – while Home starts from cold (after a reboot or an update), after Apple Music's "Made by
+  Sound": a black, still surface; a drop lands on the heavy white EspirituTV wordmark with a brief flash, and
+  rings of ripples spread out, light catching their crests, bending the letters as they pass while the wordmark
+  rises into view. The ripples settle, and Home fades in. Gentler drops follow if Home is still loading.
+- **Hero slideshow** – a slideshow of its own that doesn't follow the app cards: it takes turns between your
+  streaming services, mostly series that premiered in the last few months (picked from TVmaze's schedules), plus
+  established hits, nothing tagged Horror, your Up Next picks first, up to 10 shows a visit. Press right past the
+  last button for the next show, left past the first for the one before. Each show appears with
   its official title logo over a text-free backdrop (TMDB art, checked by eye), drifting slowly closer like the
   Apple TV screensaver, with a soft crossfade every 14 s and a fresh order on every visit to Home. On Android 11+
   the art runs on its own surface behind Home, so the motion never redraws the cards or text. Brand-new series
