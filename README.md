@@ -22,9 +22,12 @@ To see the screen with sample history (a show left half-way, and one watched the
 ## What's on the screen
 
 - **Loading screen** – while Home starts from cold (after a reboot or an update), after Apple Music's "Made by
-  Sound": a black, still surface; a drop lands on the heavy white EspirituTV wordmark with a brief flash, and
-  rings of ripples spread out, light catching their crests, bending the letters as they pass while the wordmark
-  rises into view. The ripples settle, and Home fades in. Gentler drops follow if Home is still loading.
+  Sound": a black, still surface with a studio light's faint reflection on it; a drop lands on the heavy white
+  EspirituTV wordmark with a glint, and the impact and its rebound send out rings of ripples, light glinting off
+  their crests and the reflection wobbling as they cross it, bending the letters as they pass while the wordmark
+  rises into view out of focus and sharpens. Like water, they bend red, green and blue differently, so the letters split into
+  colour fringes and the crests into thin rainbows, closing back up into clean white as the surface settles and
+  Home fades in. Gentler drops follow if Home is still loading.
 - **Hero slideshow** – a slideshow of its own that doesn't follow the app cards: it takes turns between your
   streaming services, mostly series that premiered in the last few months (picked from TVmaze's schedules), plus
   established hits, nothing tagged Horror, your Up Next picks first, up to 10 shows a visit. Press right past the
