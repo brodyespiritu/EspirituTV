@@ -1,7 +1,7 @@
 # EspirituTV
 
 A fast Home screen for TCL Android TV / Google TV, built from the EspirituTV canvas design:
-full-screen show art, rows of Apple TV-style app cards, and a banner for the show you watch every week.
+full-screen show art and rows of Apple TV-style app cards.
 
 ## Install
 
@@ -16,7 +16,7 @@ full-screen show art, rows of Apple TV-style app cards, and a banner for the sho
 Accept the debugging prompt on the TV. `--make-home` turns off the stock Google TV home screen so Home opens
 EspirituTV; `./install.sh <ip> --restore` puts it back. Run without `--make-home` to update later.
 
-To see the screen with sample history (a show left half-way, and one watched the last three Tuesdays):
+To try it with sample watch history (a show left half-way, which puts a dot under its app's card):
 `./install.sh <ip> --demo`. Clear it from Settings → Forget watch history.
 
 ## What's on the screen
@@ -36,15 +36,10 @@ To see the screen with sample history (a show left half-way, and one watched the
   Apple TV screensaver, with a soft crossfade every 14 s and a fresh order on every visit to Home. On Android 11+
   the art runs on its own surface behind Home, so the motion never redraws the cards or text. Brand-new series
   read "New on …" with a *New series* tag. Turn the drift off in Settings → Background motion.
-- **Banner** (top right) – *Continue watching* for a show you left part-way (last 4 days): the episode
-  ("Season 3, Episode 7" and its name) and a progress bar. OK goes back into the show where it stopped (the app's own player for its paused
-  session), not just the app. Otherwise the show you watch on the same weekday (3 of the last 6
-  weeks), with *Tonight* on that day. Nothing when there's neither. `./install.sh <ip> --history` prints what
-  the TV has recorded. Home reads the TV's media sessions whenever it's in front (TCL kills background apps, so
-  a live listener alone misses things). Hulu's TV app reports neither the show nor the episode: hold OK on the
-  banner and type both once (or `./install.sh <ip> --watching com.hulu.livingroomplus "The Mentalist" S3E7`);
-  after that the TV moves to the next episode by itself each time one starts from the top.
-- **CNAW2 news banners** – when cnaw2news.com publishes an article, it slides in as the same banner at the top
+- **In-progress dot** – a small dot under the card of an app with a show left part-way (last 4 days).
+  `./install.sh <ip> --history` prints what the TV has recorded. Home reads the TV's media sessions whenever it's
+  in front (TCL kills background apps, so a live listener alone misses things).
+- **CNAW2 news banners** – when cnaw2news.com publishes an article, it slides in as a frosted banner at the top
   right over whatever is on screen (a playing show included), stays five seconds and slides away. A small
   watcher checks the site's public feed once a minute; `install.sh` grants the "draw over other apps"
   permission it needs. Toggle it in Settings, or try it with `./install.sh <ip> --news-test`.

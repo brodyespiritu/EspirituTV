@@ -20,7 +20,7 @@ import android.widget.ImageView
  *
  * On Android 11+ it lives in its own surface: a SurfaceView behind the Home window hosting the stills through
  * SurfaceControlViewHost. The drift and the fades update only that layer, which the TV's compositor blends in
- * hardware; the Home window (cards, banner, text) never redraws for them.
+ * hardware; the Home window (cards, text) never redraws for them.
  *
  * The surface goes away whenever another app is in front. Android 11 doesn't hang the hosted stills back onto a
  * re-created surface, so instead of re-using it the layer is rebuilt from scratch (new SurfaceView, new host,

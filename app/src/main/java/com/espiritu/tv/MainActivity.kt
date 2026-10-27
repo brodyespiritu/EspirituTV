@@ -2,7 +2,6 @@ package com.espiritu.tv
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.app.PendingIntent
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -80,10 +79,6 @@ class MainActivity : Activity(), AppGrid.Host, HomeController.Actions {
         home.avatar.setOnClickListener { showSettings() }
         home.update.setOnClickListener { Updater.available?.let { showUpdate(it) } }
         controller = HomeController(this, home, prefs, io, main, this)
-        home.banner.button.setOnLongClickListener { controller.continuePkg?.let { askWatching(it) } != null }
-        home.banner.button.setOnKeyListener { _, key, ev ->
-            if (ev.action == KeyEvent.ACTION_DOWN && key == KeyEvent.KEYCODE_MENU) { controller.continuePkg?.let { askWatching(it) }; true } else false
-        }
 
         Updater.onChange = { home.updateAvailable = Updater.available != null }
         Updater.cleanUp(this)
@@ -140,47 +135,6 @@ class MainActivity : Activity(), AppGrid.Host, HomeController.Actions {
         main.removeCallbacks(scanRunnable)
         controller.stop()
         super.onPause()
-    }
-
-    /** Hold OK on the Continue-watching banner: name what an app that sends no title is playing. */
-    /** Hold OK on the Continue-watching banner: the show's name and episode, for an app that doesn't say (Hulu). */
-    private fun askWatching(pkg: String) {
-        val label = apps.firstOrNull { it.pkg == pkg }?.label ?: Brands.provider(pkg)?.name ?: "this app"
-        val current = History.all().lastOrNull { it.pkg == pkg }
-        val input = EditText(this).apply {
-            setText(prefs.watching(pkg).orEmpty())
-            hint = "Show name"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
-            setSingleLine()
-        }
-        val episode = EditText(this).apply {
-            if (current != null && current.episode > 0) setText("S${current.season}E${current.episode}")
-            hint = "Season and episode, like S3E7"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
-            setSingleLine()
-        }
-        val form = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(px(40), px(10), px(40), 0)
-            addView(input)
-            addView(episode)
-        }
-        AlertDialog.Builder(this)
-            .setTitle("What are you watching on $label?")
-            .setMessage("After this, the TV moves to the next episode by itself whenever one starts.")
-            .setView(form)
-            .setPositiveButton("Save") { _, _ ->
-                val name = input.text.toString().trim()
-                val old = prefs.watching(pkg)
-                prefs.setWatching(pkg, name)
-                if (name.isNotEmpty()) History.relabel(this, pkg, name, old)
-                val text = episode.text.toString().trim()
-                val se = History.seasonEpisode(text) ?: Regex("""^\s*(\d{1,2})\D+(\d{1,3})\s*$""").find(text)?.let { it.groupValues[1].toInt() to it.groupValues[2].toInt() }
-                if (se != null) History.setEpisode(this, pkg, se.first, se.second)
-                controller.refresh()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
 
     override fun onDestroy() {
@@ -277,19 +231,6 @@ class MainActivity : Activity(), AppGrid.Host, HomeController.Actions {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
         if (launch(intent)) return
         if (!openPackageOrNull(app.pkg)) toast("Couldn't open ${app.label}")
-    }
-
-    /**
-     * Back into the show where it stopped. Apps keep their media session, paused, after you leave; its
-     * "now playing" screen reopens the player on that episode, and play() continues from the same second.
-     * Without a session (the app was fully closed) the app opens normally.
-     */
-    override fun resumePlayback(pkg: String) {
-        val session = MediaWatcher.session(this, pkg)
-        if (session == null) { openPackage(pkg); return }
-        val opened = session.sessionActivity?.let { try { it.send(); true } catch (e: PendingIntent.CanceledException) { false } } ?: false
-        if (!opened) openPackage(pkg)
-        main.postDelayed({ try { session.transportControls.play() } catch (t: Throwable) {} }, 900)
     }
 
     /** Opens the app, or its Play Store page when it isn't installed (the hero's "Get …" button). */

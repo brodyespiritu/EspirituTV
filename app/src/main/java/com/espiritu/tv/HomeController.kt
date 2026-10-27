@@ -10,7 +10,7 @@ import java.util.concurrent.ExecutorService
 
 /**
  * Decides what fills the Home screen and loads it off the main thread.
- * - Banner: the show left part-way (Continue watching) wins; otherwise the weekly show; otherwise nothing.
+ * - Cards: a dot under the app with a show left part-way.
  * - Hero and background: a slideshow of its own, untouched by which app card has focus. It takes turns between
  *   your streaming services (mostly brand-new series, never Horror, Up Next picks first), each show's text-free
  *   backdrop drifting slowly closer, a new one every [ROTATE_MS], in a fresh order on every Home visit.
@@ -26,16 +26,12 @@ class HomeController(
 ) {
     interface Actions {
         fun openPackage(pkg: String)
-        /** Back into the show where it stopped (the app's own player for its paused session), not just the app. */
-        fun resumePlayback(pkg: String)
         fun showInfo(show: Show?, title: String, pkg: String)
         fun toast(msg: String)
     }
 
     var pinnedApps: List<AppEntry> = emptyList()
     var allApps: List<AppEntry> = emptyList()
-    /** The app behind the Continue-watching banner, if any (for naming what it plays). */
-    var continuePkg: String? = null; private set
 
     /** One show in the slideshow, and the app it's on. */
     private class Slide(val pkg: String, val showId: Int)
@@ -108,28 +104,14 @@ class HomeController(
     /** Settings toggled the background drift. */
     fun motionChanged() { view.back.motion = prefs.motion }
 
-    /** Re-reads watch history for the banner and the card dot. Safe to call often; stale loads are dropped. */
+    /** Re-reads watch history for the card dot, and starts the slideshow once the apps are known. Safe to call often. */
     fun refresh() {
         val g = ++gen
         io.execute {
             History.init(ctx)
             val play = History.inProgress()
-            val weekly = if (play == null) History.weekly() else null
-            val playShow = play?.takeIf { it.showGuess.isNotBlank() }?.let { Catalog.resolve(it.guesses) }
-            val playEp = play?.let { Catalog.episodeOf(playShow, it) }
-            val playApp = play?.let { app(it.pkg) }
-            // No show art (app sent no title): the app's own banner card stands in.
-            val playArt = playShow?.let(::artUrl)?.let { Images.load(it, px(192 * 1.5f)) } ?: playApp?.card
-            val weeklyShow = weekly?.let { Catalog.resolve(listOf(it.play.showGuess) + it.play.guesses) }
-            val weeklyArt = weeklyShow?.let(::artUrl)?.let { Images.load(it, px(192 * 1.5f)) }
             main.post {
                 if (g != gen) return@post
-                continuePkg = play?.pkg
-                when {
-                    play != null -> view.banner.setContinue(play, playShow, playEp, playArt, playApp?.label ?: Brands.provider(play.pkg)?.name ?: play.pkg) { actions.resumePlayback(play.pkg) }
-                    weekly != null -> view.banner.setWeekly(weekly, weeklyShow, weeklyArt) { actions.openPackage(weekly.play.pkg) }
-                    else -> view.banner.hide()
-                }
                 view.grid.setRunning(play?.pkg)
                 // The slideshow waits for the app list (it's made from the streaming apps you have).
                 if (allApps.isNotEmpty()) {

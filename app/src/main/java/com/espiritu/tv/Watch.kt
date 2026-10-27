@@ -37,7 +37,7 @@ class Weekly(val play: Play, val weekday: Int, val minuteOfDay: Int, val weeks: 
 
 /**
  * What's been watched, kept on the TV only (files/history.json). Fed by [MediaWatcher];
- * read by Home for Continue watching and the weekly-show banner.
+ * read by Home for the dot under the card of an app with a show left part-way.
  */
 object History {
     private const val MAX = 400

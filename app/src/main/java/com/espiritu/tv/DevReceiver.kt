@@ -10,7 +10,7 @@ import java.util.Locale
 
 /**
  * adb-only hooks (the receiver needs android.permission.DUMP, which apps can't hold):
- *   adb shell am broadcast -a com.espiritu.tv.DEMO       sample watch history, to see the banner
+ *   adb shell am broadcast -a com.espiritu.tv.DEMO       sample watch history, to see the in-progress dot
  *   adb shell am broadcast -a com.espiritu.tv.CLEAR      forget all watch history
  *   adb shell am broadcast -a com.espiritu.tv.SCAN       look at the media sessions active right now
  *   adb shell am broadcast -a com.espiritu.tv.NEWS_TEST  show the newest CNAW2 article as a banner over whatever is on screen

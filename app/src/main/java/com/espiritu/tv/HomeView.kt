@@ -11,8 +11,8 @@ import android.widget.LinearLayout
 /**
  * Home, at 1920 × 1080 canvas px: art filling the screen (on its own layer behind this window, see [BackLayer]),
  * the wordmark top-left, the avatar top-right (with the "Update available" chip beside it when there is one),
- * the banner hanging from the top edge, the hero block above the apps, and the apps as cards five to a row.
- * Moving down into the second row and beyond scrolls the cards up while the hero and banner fade and the art dims,
+ * the hero block above the apps, and the apps as cards five to a row.
+ * Moving down into the second row and beyond scrolls the cards up while the hero fades and the art dims,
  * the way Apple TV's home screen does. A loading screen covers everything until the first art is on screen.
  */
 class HomeView(ctx: Context, gridHost: AppGrid.Host) : FrameLayout(ctx) {
@@ -25,7 +25,6 @@ class HomeView(ctx: Context, gridHost: AppGrid.Host) : FrameLayout(ctx) {
     /** A 40 px glass pill, scaled from its right edge so focus never covers the avatar. */
     val update = PillButton(ctx, primary = false, iconRes = R.drawable.ic_download, text = "Update available",
         height = 40, textSize = 18, pad = 18, iconSize = 18, anchorEnd = true)
-    val banner = BannerView(ctx)
     val hero = HeroView(ctx)
     val grid = AppGrid(ctx, gridHost)
     private val credit = ctx.label(16, Fonts.medium, C.white(0.55f), "Art: TMDB")
@@ -48,8 +47,6 @@ class HomeView(ctx: Context, gridHost: AppGrid.Host) : FrameLayout(ctx) {
         addView(avatar, LayoutParams(px(60), px(60), Gravity.TOP or Gravity.END).apply { setMargins(0, px(64), px(120), 0) })
         addView(update, LayoutParams(WRAP, px(40), Gravity.TOP or Gravity.END).apply { setMargins(0, px(74), px(196), 0) })
         update.visibility = View.GONE
-        banner.onChange = { syncUpdate() }
-        addView(banner, LayoutParams(px(460), WRAP, Gravity.TOP or Gravity.START).apply { marginStart = px(1249) })
         addView(hero, LayoutParams(px(960), WRAP, Gravity.BOTTOM or Gravity.START).apply { setMargins(px(120), 0, 0, px(HERO_BOTTOM)) })
         addView(credit, LayoutParams(WRAP, WRAP, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, px(120), px(HERO_BOTTOM + 30)) })
         addView(dots, LayoutParams(WRAP, px(8), Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, px(120), px(HERO_BOTTOM)) })
@@ -82,23 +79,21 @@ class HomeView(ctx: Context, gridHost: AppGrid.Host) : FrameLayout(ctx) {
 
     /**
      * Row 0 sits under the hero. Deeper rows scroll the cards up so the focused row sits near the top,
-     * while the hero, banner and paging fade and the art dims behind the cards.
+     * while the hero and paging fade and the art dims behind the cards.
      */
     fun scrollToRow(row: Int) {
         val deep = row > 0
         val ty = if (!deep) 0f else -pxf(GRID_TOP - 220 + (row - 1) * AppGrid.ROW_H)
         val ease = DecelerateInterpolator(1.5f)
         grid.animate().translationY(ty).setDuration(320).setInterpolator(ease).start()
-        for (v in listOf(hero, banner, credit, dots, update)) v.animate().alpha(if (deep) 0f else 1f).setDuration(240).start()
+        for (v in listOf(hero, credit, dots, update)) v.animate().alpha(if (deep) 0f else 1f).setDuration(240).start()
         dim.animate().alpha(if (deep) 1f else 0f).setDuration(320).start()
         hero.descendantFocusability = if (deep) FOCUS_BLOCK_DESCENDANTS else FOCUS_AFTER_DESCENDANTS
     }
 
-    /** Whether a newer version waits; the chip shows while the banner isn't using that corner (Settings keeps its row). */
+    /** Whether a newer version waits (the chip beside the avatar; Settings keeps its row too). */
     var updateAvailable = false
-        set(v) { field = v; syncUpdate() }
-
-    private fun syncUpdate() { update.gone(!updateAvailable || banner.visibility == View.VISIBLE) }
+        set(v) { field = v; update.gone(!v) }
 
     /** Paging dots for the slideshow; count 0 hides them and drops the credit back down. */
     fun setDots(count: Int, index: Int) {
@@ -122,29 +117,23 @@ class HomeView(ctx: Context, gridHost: AppGrid.Host) : FrameLayout(ctx) {
     /** The card to land on when coming down from the hero (row 0, where focus last was). */
     private fun firstRowTarget(): View? = grid.lastFocused?.takeIf { it.isShown && grid.focusedRow == 0 } ?: grid.firstCard
 
-    /** D-pad routing between the regions: banner / update chip / avatar on top, hero buttons, the card rows. */
+    /** D-pad routing between the regions: update chip / avatar on top, hero buttons, the card rows. */
     override fun focusSearch(focused: View?, direction: Int): View? {
         val heroOn = hero.visibility == View.VISIBLE
-        val bannerOn = banner.visibility == View.VISIBLE
         val updateOn = update.visibility == View.VISIBLE
         val inHero = focused != null && isIn(focused, hero)
         val inGrid = focused != null && isIn(focused, grid)
-        val inBanner = focused != null && isIn(focused, banner)
-        val topTarget = if (bannerOn) banner.button else avatar
         when (direction) {
             FOCUS_DOWN -> {
                 if (inHero) return firstRowTarget() ?: super.focusSearch(focused, direction)
-                if (inBanner || focused === avatar || focused === update) return if (heroOn) hero.primary else firstRowTarget()
+                if (focused === avatar || focused === update) return if (heroOn) hero.primary else firstRowTarget()
             }
             FOCUS_UP -> {
-                if (inGrid && grid.focusedRow == 0) return if (heroOn) hero.primary else topTarget
-                if (inHero) return topTarget
+                if (inGrid && grid.focusedRow == 0) return if (heroOn) hero.primary else avatar
+                if (inHero) return avatar
             }
-            FOCUS_LEFT -> if (focused === avatar) {
-                if (updateOn) return update
-                if (bannerOn) return banner.button
-            }
-            FOCUS_RIGHT -> if (inBanner || focused === update) return avatar
+            FOCUS_LEFT -> if (focused === avatar && updateOn) return update
+            FOCUS_RIGHT -> if (focused === update) return avatar
         }
         return super.focusSearch(focused, direction)
     }

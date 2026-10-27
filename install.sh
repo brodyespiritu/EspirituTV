@@ -2,7 +2,7 @@
 # Installs EspirituTV on a TCL Android TV / Google TV over Wi-Fi.
 #   ./install.sh 192.168.1.50              install / update
 #   ./install.sh 192.168.1.50 --make-home  also make EspirituTV the Home screen
-#   ./install.sh 192.168.1.50 --demo       add sample watch history (see the banner and Continue watching)
+#   ./install.sh 192.168.1.50 --demo       add sample watch history (a show left part-way: a dot under its card)
 #   ./install.sh 192.168.1.50 --history    print what the TV has recorded being watched
 #   ./install.sh 192.168.1.50 --restore    put the stock TCL/Google launcher back
 set -e
@@ -89,7 +89,7 @@ fi
 TV shell appops set "$PKG" SYSTEM_ALERT_WINDOW allow >/dev/null 2>&1 && echo "News banners may draw over other apps."
 TV shell am start-foreground-service -n "$PKG/.NewsService" >/dev/null 2>&1 || true
 
-# Lets EspirituTV see what's playing (for Continue watching and the weekly banner). Nothing leaves the TV.
+# Lets EspirituTV see what's playing (for the in-progress dot under the cards). Nothing leaves the TV.
 if TV shell cmd notification allow_listener "$PKG/.MediaWatcher" >/dev/null 2>&1; then
   echo "Watch-history access on."
 else
